@@ -1,4 +1,4 @@
-# Koncepcja MVP – podstawa do stworzenia PRD
+#Koncepcja MVP – podstawa do stworzenia PRD
 
 ## Główny problem
 Inżynierowie spawalnicy oraz technolodzy produkcji nie mają obecnie dostępu do prostego, przystępnego cenowo i dedykowanego narzędzia umożliwiającego szybkie tworzenie przekrojów złączy spawanych oraz planowanie sekwencji spawania. W praktyce korzystają z ogólnych programów CAD (np. AutoCAD, Catia, Inventor, SolidWorks), co jest zbyt skomplikowane i czasochłonne do prostych zastosowań, lub wykonują szkice ręcznie w edytorach typu Paint albo Word (gdzie można wstawiać bloki czy cliparty). Takie rozwiązania wymagają wysokich umiejętności technicznych, zajmują dużo czasu i utrudniają przygotowanie przejrzystej, czytelnej dokumentacji technicznej.
