@@ -11,7 +11,7 @@ Wymagania wydajnościowe: ≥ 30 FPS przy typowych scenach; < 200 ms reakcji UI 
 | Warstwa | Technologia |
 |---|---|
 | Framework frontendowy | Next.js (App Router), React, TypeScript |
-| Silnik canvas | Konva.js via `react-konva` |
+| Silnik canvas | Konva.js via `react-konva` — ukryta za `src/canvas-kit/` (patrz §22). Wymienialna na PixiJS bez modyfikacji domeny. |
 | Zarządzanie stanem | Zustand + Immer |
 | Styling | Tailwind CSS |
 | Ikony | Lucide React |
@@ -39,6 +39,8 @@ Wymagania wydajnościowe: ≥ 30 FPS przy typowych scenach; < 200 ms reakcji UI 
 5. **Transient vs. committed:** `updateShapeTransient` — live drag bez historii; `commitShapeUpdate` — koniec operacji z wpisem do `history[]`.
 
 6. **`FieldUpdate` / `ShapeUpdate` boundary:** `ShapeDefinition` używa luźnego `FieldUpdate = Partial<Record<string, unknown>>`. Store używa ścisłego `ShapeUpdate` (intersection-derived). Rozwiązanie cyklu importów `shapes/` ↔ `store/`.
+
+7. **Canvas-kit boundary:** import `konva` / `react-konva` (i każdej innej biblioteki silnika canvasu) dozwolony **wyłącznie** w `src/canvas-kit/impl-*/` i `src/components/canvas/`. Reszta kodu (`shapes/`, `weld-units/`, `store/`, `lib/`) używa wyłącznie prymitywów i komponentów reeksportowanych z `@/canvas-kit`. Wymiana silnika canvasu (np. PixiJS) sprowadza się do dodania `impl-pixi/` i przełączenia jednego eksportu w `canvas-kit/index.ts`. Pełna specyfikacja granicy: §22. Plan wymiany: `.ai/canvas-kit-migration-plan.md`.
 
 ---
 
@@ -108,13 +110,25 @@ src/
     project-list/
       ProjectList.tsx
 
+  canvas-kit/               ← warstwa abstrakcji silnika canvasu (§22)
+    index.ts                ← reeksport prymitywów + CanvasShell + rasterize z aktywnej impl
+    primitives.ts           ← typy props prymitywów (G, Rect, Line, Arc, Circle, Path, Text)
+    pointerInput.ts         ← normalizacja DOM PointerEvent → gesty (pinch/pan/drag/tap)
+    constants.ts            ← HIT_AREA_TOUCH/DESKTOP, devicePixelRatio helper
+    impl-konva/             ← aktywna implementacja
+      index.ts
+      primitives.tsx        ← G→Group, Rect, Line, Arc, Circle, Path, Text (react-konva)
+      CanvasShell.tsx       ← <Stage>+<Layer>, podpina pointerInput
+      rasterize.ts          ← stage.toDataURL → Blob
+    impl-pixi/              ← przygotowane pod podmianę (post-MVP, jeśli zajdzie potrzeba)
+
   lib/
     captureGeometry.ts      ← fasada rejestru
     shapeBounds.ts          ← fasada rejestru
     snapEngine.ts           ← logika SNAP
     weldAutosize.ts         ← auto-dopasowanie weld-joint
     documentCodec.ts        ← serialize/deserialize sceny
-    exportEngine.ts         ← eksport PNG/JPG
+    exportEngine.ts         ← eksport PNG/JPG (wywołuje canvas-kit.rasterize)
     overlapDetector.ts      ← wykrywanie nakładania weld-joint z elementami
 
   app/
@@ -694,23 +708,32 @@ export type ShapeUpdate = Partial<AllShapeGeometry & { type: ShapeType }>
 
 ## 9. Canvas i nawigacja
 
-### Struktura Konva
+### Struktura sceny
+
+Komponenty domeny (`CanvasApp`, `ShapeNode`, `ShapeHandles`, …) korzystają wyłącznie z `@/canvas-kit`. Konkretny silnik (Konva dziś, potencjalnie PixiJS jutro) jest niewidoczny dla tego poziomu.
 
 ```tsx
-<Stage width={viewportWidth} height={viewportHeight} pixelRatio={window.devicePixelRatio}>
-  <Layer>
+import { CanvasShell, GroupLayer, OverlayLayer } from '@/canvas-kit'
+
+<CanvasShell width={viewportWidth} height={viewportHeight}>
+  <GroupLayer>
     {shapes.map((s) => <ShapeNode key={s.id} shape={s} />)}
     {weldUnits.map((u) => <WeldUnitOverlay key={u.id} unit={u} />)}
-  </Layer>
-  <Layer>  {/* kontrolki — zawsze na wierzchu */}
+  </GroupLayer>
+  <OverlayLayer>  {/* kontrolki — zawsze na wierzchu */}
     <ShapeHandles />
     <WeldUnitHandles />
     <MultiShapeHandles />
     <AnchorPoints />      {/* widoczne w trybie 'weld-joint' */}
     <SelectionMarquee />
-  </Layer>
-</Stage>
+  </OverlayLayer>
+</CanvasShell>
 ```
+
+Mapowanie w aktywnej implementacji `canvas-kit/impl-konva/`:
+- `CanvasShell` → `<Stage pixelRatio={devicePixelRatio}>`
+- `GroupLayer` / `OverlayLayer` → `<Layer>`
+- `G/Rect/Line/Arc/Circle/Path/Text` → `<Group>/<Rect>/<Line>/<Arc>/<Circle>/<Path>/<Text>` z `react-konva`
 
 ### Tryby kursora
 
@@ -727,7 +750,7 @@ export type ShapeUpdate = Partial<AllShapeGeometry & { type: ShapeType }>
 - Touch 1 palec → pan; pinch → zoom
 - Viewport ograniczony do granic obszaru roboczego (`canvasWidth × canvasHeight`)
 - Widok startowy po wczytaniu: zoom-to-fit, padding ≤ 40 px
-- Pinch-to-zoom: śledzenie dwóch `pointerId` w `CanvasApp.tsx`. Nie używać `gesturestart`/`gesturechange`.
+- Pinch-to-zoom: śledzenie dwóch `pointerId` w `canvas-kit/pointerInput.ts` (nie w `CanvasApp.tsx`). Komponenty domeny otrzymują znormalizowane gesty (`pinch | pan | drag | tap`) z `pointerInput`. Nie używać `gesturestart`/`gesturechange` ani natywnych eventów `e.evt.touches[]` Konvy — pinch implementujemy wyłącznie przez Pointer Events API.
 
 ### Obsługa dotykowa
 
@@ -909,7 +932,19 @@ Wszystkie funkcje czyste — testowalne bez Konvy ani store'u.
 2. Jeśli kadrowanie: bounding box wszystkich elementów + padding 20 px
 3. Nałożyć warstwę opisową (jeśli włączona)
 4. Nałożyć watermark (jeśli plan Guest lub Free)
-5. `stage.toDataURL()` → PNG lub JPG
+5. Wywołać `rasterize(options)` z `@/canvas-kit` → `Blob` (PNG lub JPG)
+
+`exportEngine` nie zna konkretnego silnika canvasu. `canvas-kit/impl-konva/rasterize.ts` deleguje do `stage.toDataURL()`; `canvas-kit/impl-pixi/rasterize.ts` (jeśli powstanie) deleguje do `app.renderer.extract.image()`.
+
+```typescript
+// src/canvas-kit/index.ts (kontrakt — niezmienny przy wymianie silnika)
+export interface RasterizeOptions {
+  format: 'png' | 'jpg'
+  area: 'full' | 'content'  // content = bbox + padding 20px
+  pixelRatio?: number
+}
+export function rasterize(options: RasterizeOptions): Promise<Blob>
+```
 
 ### Opcje
 
@@ -1115,8 +1150,16 @@ Przykład: `profile-u`.
 
 - `pointer*` events wszędzie; `setPointerCapture` przy starcie dragu
 - Hit area: 20 px (touch) / 8 px (desktop)
-- `pixelRatio={window.devicePixelRatio}` na `<Stage>`
-- Przetestować na fizycznym tablecie Wacom przed oddaniem do użytkowników
+- `pixelRatio={window.devicePixelRatio}` ustawiane przez `CanvasShell` (impl-konva → na `<Stage>`)
+- **Spike na fizycznym tablecie (iPad, Wacom) PRZED implementacją 8 kształtów** — empiryczna weryfikacja, czy Konva nie wymaga wymiany na PixiJS
+- Cała logika multi-touch żyje w `canvas-kit/pointerInput.ts` — niezależna od Konvy
+
+### Wymiana silnika canvasu (Konva → PixiJS)
+
+- Konva ukryta za `src/canvas-kit/`. Wymiana = dodanie `impl-pixi/` (prymitywy 1:1, `CanvasShell`, `rasterize`, adapter Federated Events) i przełączenie eksportu w `canvas-kit/index.ts`
+- ESLint `no-restricted-imports` blokuje import `konva`/`react-konva` poza `src/canvas-kit/impl-*` i `src/components/canvas/`
+- Pełny plan migracji: `.ai/canvas-kit-migration-plan.md`
+- ~70% kodu (domena, store, history, snap, weld-units) przeżywa wymianę bez modyfikacji
 
 ### Złożoność maszyny stanów WeldUnit
 
@@ -1143,7 +1186,7 @@ Przykład: `profile-u`.
 ShapeType (closed union)
   └─► SHAPE_REGISTRY[type] → ShapeDefinition<S>
         ├── create(pos)              → nowy S
-        ├── Renderer                 → Konva Group
+        ├── Renderer                 → drzewo prymitywów @/canvas-kit (G/Rect/Line/Arc/Circle/Path/Text)
         ├── PropertiesPanel          → sidebar form
         ├── captureGeometry(s)       → FieldUpdate
         ├── getBoundingBox(s)        → BoundingBox
@@ -1181,9 +1224,13 @@ WeldUnit (state: 'locked' | 'sequence' | 'detached')
   Restore dormant   : tylko gdy checksum(currentJoint) == sequenceJointChecksum
   Zniszczenie unitu : usunięcie weld-joint lub elementu z elementIds
 
-Canvas (Konva)
-  Layer 1: shapes + WeldUnit overlays   [z-index = kolejność shapes[]]
-  Layer 2: handles, WeldUnitHandles, marquee, anchors   [zawsze na wierzchu]
+Canvas (przez @/canvas-kit; impl-konva aktywne, impl-pixi przygotowane)
+  CanvasShell
+    GroupLayer   : shapes + WeldUnit overlays   [z-index = kolejność shapes[]]
+    OverlayLayer : handles, WeldUnitHandles, marquee, anchors   [zawsze na wierzchu]
+  pointerInput   : DOM PointerEvent → { pinch | pan | drag | tap }
+  rasterize      : eksport PNG/JPG (delegacja do silnika)
+  Import konva/react-konva: WYŁĄCZNIE w canvas-kit/impl-* i components/canvas/
 
 SNAP (dwa tryby współistnieją)
   10.1 Point-snap          : anchors() → AnchorPoint, próg 8 px, bez stanu
@@ -1202,3 +1249,152 @@ Nowy kształt → 4 miejsca:
   src/shapes/registry.ts +1 do SHAPE_REGISTRY
   src/store/types.ts     +1 do AllShapeGeometry
 ```
+
+---
+
+## 22. Canvas-kit boundary (warstwa abstrakcji silnika canvasu)
+
+Cel: odizolować całą domenę aplikacji od konkretnej biblioteki renderującej, żeby ewentualna wymiana Konva → PixiJS (lub dowolny inny silnik) była lokalną zmianą w `src/canvas-kit/`, a nie ogólnoprojektowym refactoringiem.
+
+### 22.1 Co jest wewnątrz `@/canvas-kit`
+
+**Kontrakt publiczny (`src/canvas-kit/index.ts`)** — niezmienny przy wymianie silnika:
+
+```typescript
+// Komponenty kontenerowe
+export { CanvasShell, GroupLayer, OverlayLayer } from './impl-konva'
+
+// Prymitywy graficzne (drzewo deklaratywne, React)
+export { G, Rect, Line, Arc, Circle, Path, Text } from './impl-konva'
+
+// Wejście (znormalizowane gesty z Pointer Events API)
+export { usePointerInput } from './pointerInput'
+export type { PointerGesture } from './pointerInput'
+// PointerGesture = { kind: 'pinch'|'pan'|'drag'|'tap', ... }
+
+// Eksport rastrowy
+export { rasterize } from './impl-konva'
+export type { RasterizeOptions } from './primitives'
+
+// Stałe
+export { HIT_AREA_TOUCH, HIT_AREA_DESKTOP, devicePixelRatio } from './constants'
+```
+
+### 22.2 Typy props prymitywów
+
+Każdy prymityw przyjmuje **tylko** props, które mają 1:1 odpowiednik w Konva i Pixi. Brak Konva-specific properties (`shadowBlur`, `cache()`, `Konva.Animation`, …) na poziomie publicznym. Jeśli dany efekt jest niezbędny — wraz dodajemy do kontraktu i implementujemy w obu backendach.
+
+```typescript
+// src/canvas-kit/primitives.ts
+export interface CommonShapeProps {
+  x?: number; y?: number
+  rotation?: number
+  opacity?: number
+  fill?: string
+  stroke?: string
+  strokeWidth?: number
+  // pointer events (DOM PointerEvent — wspólne dla obu silników)
+  onPointerDown?:   (e: PointerEvent) => void
+  onPointerMove?:   (e: PointerEvent) => void
+  onPointerUp?:     (e: PointerEvent) => void
+  onPointerCancel?: (e: PointerEvent) => void
+}
+
+export interface RectProps   extends CommonShapeProps { width: number; height: number; cornerRadius?: number }
+export interface LineProps   extends CommonShapeProps { points: number[]; closed?: boolean }
+export interface ArcProps    extends CommonShapeProps { innerRadius: number; outerRadius: number; angle: number }
+export interface CircleProps extends CommonShapeProps { radius: number }
+export interface PathProps   extends CommonShapeProps { d: string }   // SVG path data
+export interface TextProps   extends CommonShapeProps { text: string; fontSize: number; align?: 'left'|'center'|'right' }
+export interface GProps      extends CommonShapeProps { children?: React.ReactNode }
+```
+
+### 22.3 Granice importów (egzekwowane przez ESLint)
+
+```jsonc
+// eslint.config.js — fragment
+{
+  rules: {
+    'no-restricted-imports': ['error', {
+      patterns: [
+        { group: ['konva', 'konva/*', 'react-konva'], message: 'Importuj z @/canvas-kit. Konva legalna tylko w src/canvas-kit/impl-konva i src/components/canvas/.' },
+        { group: ['pixi.js', '@pixi/*'],              message: 'Importuj z @/canvas-kit. Pixi legalne tylko w src/canvas-kit/impl-pixi.' }
+      ]
+    }]
+  },
+  overrides: [
+    { files: ['src/canvas-kit/impl-konva/**', 'src/components/canvas/**'], rules: { 'no-restricted-imports': 'off' } },
+    { files: ['src/canvas-kit/impl-pixi/**'],                              rules: { 'no-restricted-imports': 'off' } }
+  ]
+}
+```
+
+### 22.4 Co Renderer może, a czego nie
+
+**Może:**
+- Importować `G/Rect/Line/Arc/Circle/Path/Text` z `@/canvas-kit`
+- Używać DOM `PointerEvent` w handlerach
+- Czytać `HIT_AREA_TOUCH`/`HIT_AREA_DESKTOP` z `@/canvas-kit`
+
+**Nie może:**
+- Importować nic z `konva`, `react-konva`, `pixi.js`, `@pixi/*` bezpośrednio
+- Używać refów do nodów silnika (`Konva.Node`, `Pixi.Container`) — refy wewnątrz `impl-*`
+- Wywoływać imperatywnych API (`.cache()`, `Konva.Animation`, `app.ticker`) — animacje przez stan React lub `requestAnimationFrame` na poziomie domeny
+- Używać `e.evt.touches[]`, `gesturestart`, `gesturechange` — multi-touch wyłącznie przez `usePointerInput`
+
+### 22.5 Kontrakt `pointerInput`
+
+```typescript
+// src/canvas-kit/pointerInput.ts
+export type PointerGesture =
+  | { kind: 'tap';   x: number; y: number; pointerId: number; pointerType: 'mouse'|'touch'|'pen' }
+  | { kind: 'drag';  start: Point; current: Point; delta: Point; pointerId: number; phase: 'start'|'move'|'end' }
+  | { kind: 'pan';   delta: Point; pointerId: number; phase: 'start'|'move'|'end' }
+  | { kind: 'pinch'; center: Point; scale: number; rotation: number; phase: 'start'|'move'|'end' }
+
+export function usePointerInput(target: RefObject<HTMLElement>, handler: (g: PointerGesture) => void): void
+```
+
+Implementacja śledzi mapę `pointerId → PointerEvent`, na podstawie której emituje znormalizowane gesty. Zero zależności od Konva/Pixi — używa wyłącznie DOM API. Testowalna w jsdom z syntetycznymi `PointerEvent`.
+
+### 22.6 Kontrakt `rasterize`
+
+```typescript
+export interface RasterizeOptions {
+  format: 'png' | 'jpg'
+  area: 'full' | 'content'          // content = bbox + padding 20px
+  pixelRatio?: number
+  quality?: number                  // tylko 'jpg', 0..1
+}
+export function rasterize(opts: RasterizeOptions): Promise<Blob>
+```
+
+`impl-konva/rasterize.ts` deleguje do `stage.toDataURL()` + konwersja base64→Blob.
+`impl-pixi/rasterize.ts` (jeśli powstanie) deleguje do `app.renderer.extract.image()`.
+
+### 22.7 Co przeżywa wymianę silnika bez modyfikacji
+
+- Cały `src/store/`, `src/lib/`, `src/weld-units/` (bez `WeldUnitOverlay.tsx` — patrz §22.8)
+- Wszystkie typy w `src/shapes/_base/` i `src/shapes/[typ]/types.ts`
+- Wszystkie funkcje czyste: `captureGeometry`, `getBoundingBox`, `getWorldPoints`, `anchors`, `edges`, `snapEngine`, `weldAutosize`, `overlapDetector`, `documentCodec`, `bead-sequence`
+- `PropertiesPanel` każdego kształtu (czyste DOM/React)
+- Cały `src/app/`, `src/messages/`, `src/components/sidebar/`, `src/components/toolbar/`, `src/components/project-list/`
+
+### 22.8 Co trzeba przepisać przy wymianie silnika
+
+- `src/canvas-kit/impl-konva/*` → nowa implementacja `impl-pixi/*` (≈400-700 LOC)
+- `Renderer` w każdym `src/shapes/[typ]/index.ts` — **bez zmian**, bo importuje wyłącznie z `@/canvas-kit` (jeśli przestrzega §22.4)
+- `src/components/canvas/*` — minimalne korekty pod nowy backend gdy używają imperatywnych API (np. `setPointerCapture` na konkretnym DOM evencie). Sam `pointerInput` przeżywa wymianę.
+- `src/weld-units/WeldUnitOverlay.tsx` — przepisać na prymitywy `@/canvas-kit` (jeden plik)
+- `next.config.ts` — usunąć alias `canvas` → `./empty.js` (Konva-specific) i ewentualnie dodać konfigurację Pixi
+- ESLint override: dodać `impl-pixi/**`
+
+Pełna procedura krok po kroku: **`.ai/canvas-kit-migration-plan.md`**.
+
+### 22.9 Niezmienniki które wymuszają granicę
+
+1. **Typ `ShapeDefinition.Renderer` jest `ComponentType<{shape, isSelected, isInLockedUnit}>`** — nie typuje wewnętrznego drzewa, ale ESLint blokuje import silnika spoza canvas-kit.
+2. **`exportEngine` nie woła `stage.toDataURL` ani `app.renderer.extract`** — zawsze `rasterize` z canvas-kit.
+3. **`store/canvas.ts` nie trzyma referencji do `Stage`/`Application`** — viewport (`stageX/Y/Scale`) to czyste liczby.
+4. **`pixelRatio` ustawiane wyłącznie w `CanvasShell`** — żaden inny komponent nie czyta `window.devicePixelRatio` bezpośrednio.
+5. **Multi-touch wyłącznie przez `usePointerInput`** — `e.evt.touches[]` Konvy zakazane (sprzeczne z zasadą §2.4).
