@@ -166,7 +166,7 @@ Sterowanie wspólne dla obu trybów:
 - Przytrzymanie dedykowanego klawisza tymczasowo wyłącza SNAP (przycisk synchronicznie zmienia stan wizualny); zwolnienie przywraca poprzedni stan. Aktywny attachment jest natychmiast zrywany.
 
 **Undo/Redo:**
-Głębokość **100 kroków** historii; implementacja przez **Command Pattern** (custom history slice w Zustand); historia zapisywana w Supabase; architektura przygotowana na przyszłą aktywną współpracę wieloosobową. Skróty klawiszowe: Ctrl/Cmd+Z (undo), Ctrl/Cmd+Y lub Ctrl/Cmd+Shift+Z (redo) — obsługiwane zarówno na Windows/Linux (Ctrl), jak i na Mac (Cmd).
+Głębokość **100 kroków** historii; implementacja przez **Command Pattern** (custom history slice w Zustand); historia persystowana w localStorage (autozapis przy każdym `pushHistory`) — nie jest zapisywana do Supabase. Architektura jest przygotowana na przyszłą aktywną współpracę wieloosobową. Skróty klawiszowe: Ctrl/Cmd+Z (undo), Ctrl/Cmd+Y lub Ctrl/Cmd+Shift+Z (redo) — obsługiwane zarówno na Windows/Linux (Ctrl), jak i na Mac (Cmd).
 
 ### 3.6 Tryb sekwencji spawania
 
@@ -239,7 +239,7 @@ Tryb sekwencji spawania umożliwia tworzenie **połączeń spawalniczych** — w
 - Interaktywne uchwyty modyfikacji (Adjustment Handles) i uchwyt obrotu na krawędziach/przekrojach elementów.
 - Odbicie lustrzane (poziome i pionowe) oraz zarządzanie z-index z poziomu panelu.
 - Manipulacja: przesuwanie (z zachowaniem jednostki dla połączonych elementów), obrót (uchwyt narożny), zoom, pan, SNAP, multi-select z automatycznym grupowaniem.
-- Undo/Redo: 100 kroków, Command Pattern, historia w Supabase (architektonicznie gotowe na multi-user), skróty Ctrl/Cmd.
+- Undo/Redo: 100 kroków, Command Pattern, historia w localStorage (architektonicznie gotowe na multi-user), skróty Ctrl/Cmd.
 - Pełny system tworzenia połączeń spawalniczych: predefiniowane kształty → modyfikacja uchwytami → zablokowanie połączenia z min. 2 elementami → konwersja na wielowarstwową sekwencję ściegów → zarządzanie ściegami i warstwami ([+]/[−]) → wybór kształtu ściegu (trójkąt, trapez z zaokrąglonymi wierzchołkami i inne).
 - Eksport PNG i JPG (z watermarkiem dla Guest/Free, bez dla Pro).
 - Zarządzanie projektami: 1 projekt w chmurze dla Free, bez limitu dla Pro; lokalny autozapis dla wszystkich; migracja danych gościa do chmury po zalogowaniu.
@@ -728,7 +728,7 @@ Kryteria akceptacji:
 - Przyciski Undo/Redo są dostępne w toolbarze.
 - Historia obejmuje 100 ostatnich kroków; cofnięcie poza limit nie powoduje błędu.
 - Po cofnięciu operacji stan sceny jest identyczny z tym sprzed cofniętej operacji.
-- Historia jest persystowana w Supabase.
+- Historia jest persystowana w localStorage (synchronicznie po każdej operacji); nie jest zapisywana do Supabase.
 
 ---
 
