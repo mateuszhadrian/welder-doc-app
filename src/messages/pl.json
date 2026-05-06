@@ -1,0 +1,7 @@
+{
+  "App": {
+    "title": "WelderDoc",
+    "tagline": "Dokumentacja złączy spawalniczych",
+    "placeholder": "Aplikacja w trakcie bootstrapu — fundament gotowy."
+  }
+}

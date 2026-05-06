@@ -1,0 +1,2 @@
+-- Seed danych dla lokalnego dewelopera / E2E.
+-- Plik celowo pusty — testowi userzy będą dodawani gdy E2E faktycznie tego wymaga.
