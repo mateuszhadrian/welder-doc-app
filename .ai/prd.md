@@ -144,7 +144,7 @@ Na krawędziach i przekrojach każdego elementu dostępne są uchwyty interaktyw
 Na rogu zaznaczonego elementu lub grupy wyświetlany jest uchwyt obrotu (ikona kółka). Najechanie kursorem na uchwyt zmienia kursor na kursor obrotu. Przeciągnięcie uchwytu obraca element lub grupę względem środka zaznaczenia. W przypadku zaznaczonej grupy elementów obracana jest cała grupa jako jednostka.
 
 **Przesuwanie:**
-Elementy przesuwane są metodą drag & drop w trybie kursora domyślnego (strzałka). Podczas przeciągania aktywny SNAP przyciąga element do krawędzi i wierzchołków innych elementów. Elementy zablokowane połączeniem spawalniczym przesuwają się jako jednostka.
+Elementy przesuwane są metodą drag & drop w trybie kursora domyślnego (strzałka). Podczas przeciągania aktywny SNAP może przykleić element do równoległej ścianki innego elementu (edge-snap z attachmentem) — po przyklejeniu element ślizga się wyłącznie wzdłuż napotkanej krawędzi („na szynach") do momentu wyraźnego ruchu prostopadłego, który zrywa attachment. Elementy zablokowane połączeniem spawalniczym przesuwają się jako jednostka.
 
 **Odbicie lustrzane:**
 W panelu właściwości dostępne są opcje odbicia lustrzanego w poziomie i w pionie. Operacja działa na zaznaczonym elemencie lub grupie zaznaczonych elementów.
@@ -156,9 +156,14 @@ W panelu właściwości dostępna jest opcja zarządzania kolejnością warstw z
 Zaznaczenie wielu elementów (przez selection marquee lub Shift+klik) automatycznie traktuje je jako grupę dla celów wszystkich operacji (przesuwanie, obrót, odbicie, skalowanie) — nie jest wymagane osobne kliknięcie przycisku „Grupuj".
 
 **SNAP magnetyczny:**
-SNAP do krawędzi i wierzchołków innych elementów — domyślnie aktywny:
+System SNAP działa w dwóch współistniejących trybach, sterowanych jednym togglem — domyślnie aktywny:
+
+- *Point-snap (przyciąganie do punktów anchor)*: punkt referencyjny (kursor wstawiania połączenia spawalniczego, narożnik bbox przy wyrównywaniu) przyciąga się do dyskretnych punktów — środki ścianek, narożniki, środki kół.
+- *Edge-snap z attachmentem („na szynach")*: przy przesuwaniu elementu w trybie kursora domyślnego, gdy jego ścianka zbliża się równolegle do ścianki innego elementu, element automatycznie dociąga się prostopadle po najkrótszej drodze i przykleja do napotkanej krawędzi. Po przyklejeniu ślizga się wyłącznie wzdłuż krawędzi target. Zwolnienie attachmentu wymaga wyraźnego, skumulowanego ruchu prostopadłego (próg zerwania jest istotnie większy od progu przyklejenia — histereza zapobiegająca drganiu „przyklej/odklej").
+
+Sterowanie wspólne dla obu trybów:
 - Toggle button w UI (podświetlony gdy aktywny).
-- Przytrzymanie dedykowanego klawisza tymczasowo wyłącza SNAP (przycisk synchronicznie zmienia stan wizualny); zwolnienie przywraca poprzedni stan.
+- Przytrzymanie dedykowanego klawisza tymczasowo wyłącza SNAP (przycisk synchronicznie zmienia stan wizualny); zwolnienie przywraca poprzedni stan. Aktywny attachment jest natychmiast zrywany.
 
 **Undo/Redo:**
 Głębokość **100 kroków** historii; implementacja przez **Command Pattern** (custom history slice w Zustand); historia zapisywana w Supabase; architektura przygotowana na przyszłą aktywną współpracę wieloosobową. Skróty klawiszowe: Ctrl/Cmd+Z (undo), Ctrl/Cmd+Y lub Ctrl/Cmd+Shift+Z (redo) — obsługiwane zarówno na Windows/Linux (Ctrl), jak i na Mac (Cmd).
@@ -175,7 +180,7 @@ Tryb sekwencji spawania umożliwia tworzenie **połączeń spawalniczych** — w
 
 3. **Umieszczenie i modyfikacja kształtu połączenia** — po wyborze kształtu użytkownik umieszcza go na canvasie między/na elementach, a następnie dostosowuje za pomocą interaktywnych uchwytów modyfikacji (Adjustment Handles), analogicznie do edycji prymitywów.
 
-4. **Zablokowanie połączenia z elementami** — jeśli umieszczone połączenie dotyka co najmniej dwóch elementów, obok kształtu pojawia się opcja „Zablokuj połączenie z elementami". Po kliknięciu powiązane elementy i kształt połączenia tworzą jednostkę (nie mogą być przesuwane niezależnie); opcja zmienia się na „Odblokuj połączenie z elementami". Odblokowanie przywraca niezależność elementów i usuwa przycisk konwersji.
+4. **Zablokowanie połączenia z elementami** — jeśli umieszczone połączenie dotyka co najmniej dwóch elementów, obok kształtu pojawia się opcja „Zablokuj połączenie z elementami". Po kliknięciu powiązane elementy i kształt połączenia tworzą jednostkę (nie mogą być przesuwane niezależnie); opcja zmienia się na „Odblokuj połączenie z elementami". Odblokowanie przywraca niezależność elementów i ukrywa przycisk konwersji, ale **zachowuje w pamięci aplikacji ostatnio wygenerowaną sekwencję ściegów wraz z geometrią połączenia z momentu odblokowania** (pamięć dormant). Ponowne kliknięcie „Zablokuj" bez modyfikacji geometrii połączenia od czasu odblokowania natychmiast przywraca tę sekwencję (bez ponownego pojawienia się przycisku „Konwertuj"); jeżeli geometria połączenia uległa w międzyczasie zmianie — pamięć jest kasowana, pojawia się przycisk „Konwertuj na sekwencję ściegów" i nowa sekwencja generowana jest od nowa według defaultu.
 
 5. **Konwersja na sekwencję ściegów** — przycisk „Konwertuj na sekwencję ściegów" pojawia się wyłącznie po zablokowaniu połączenia z co najmniej dwoma elementami. Po kliknięciu połączenie zamienia się w wielowarstwową sekwencję ściegów:
    - Liczba warstw wyznaczana automatycznie na podstawie rozmiaru (głębokości) połączenia.
@@ -638,7 +643,7 @@ Opis: Jako użytkownik chcę przesuwać elementy metodą drag & drop, aby ułoż
 Kryteria akceptacji:
 
 - W trybie kursora domyślnego (strzałka) element można przeciągnąć w dowolne miejsce na canvasie.
-- Podczas przeciągania aktywny SNAP przyciąga element do krawędzi i wierzchołków innych elementów.
+- Podczas przeciągania aktywny SNAP może przykleić element do równoległej ścianki innego elementu (edge-snap z attachmentem); po przyklejeniu element ślizga się wzdłuż napotkanej krawędzi do momentu wyraźnego ruchu prostopadłego, który zrywa attachment (szczegóły w US-027b).
 - Elementy scalone połączeniem spawalniczym przesuwają się jako jednostka — przesunięcie jednego przesuwa całą grupę.
 - Czas reakcji przesunięcia: < 200 ms.
 
@@ -668,10 +673,32 @@ Opis: Jako użytkownik chcę, aby elementy przyciągały się do krawędzi i wie
 Kryteria akceptacji:
 
 - SNAP jest domyślnie aktywny po uruchomieniu aplikacji.
-- Toggle button w UI (podświetlony = aktywny) umożliwia ręczne włączenie/wyłączenie.
-- Przytrzymanie dedykowanego klawisza tymczasowo wyłącza SNAP; stan przycisku zmienia się synchronicznie.
+- Toggle button w UI (podświetlony = aktywny) umożliwia ręczne włączenie/wyłączenie obu trybów SNAP jednocześnie.
+- Przytrzymanie dedykowanego klawisza tymczasowo wyłącza SNAP; stan przycisku zmienia się synchronicznie. Wyłączenie zrywa również aktywny edge-snap attachment.
 - Zwolnienie klawisza przywraca poprzedni stan SNAP.
-- Podczas aktywnego SNAP element przyciąga się do geometrii innych elementów w zasięgu.
+- Podczas aktywnego SNAP system zapewnia dwa współistniejące tryby:
+  - *point-snap*: kursor / punkt referencyjny przyciąga się do dyskretnych punktów anchor (środki ścianek, narożniki, środki kół) — wykorzystywany m.in. podczas wstawiania połączenia spawalniczego;
+  - *edge-snap z attachmentem*: przeciągany element przykleja się do równoległej ścianki innego elementu i ślizga się po niej — szczegóły w US-027b.
+
+---
+
+US-027b
+Tytuł: Przyklejanie elementu do równoległej ścianki (edge-snap z attachmentem)
+
+Opis: Jako użytkownik chcę, aby przesuwany element automatycznie przyklejał się do równoległej ścianki innego elementu i ślizgał się po niej („jak po szynach"), dopóki świadomie go nie odkleję, aby precyzyjnie zestawiać elementy „styk w styk" bez ręcznego pozycjonowania.
+
+Kryteria akceptacji:
+
+- Podczas dragu elementu w trybie kursora domyślnego, gdy jakaś jego ścianka zbliża się równolegle (z niewielką tolerancją kątową) do ścianki innego elementu, system wykrywa kandydata pod warunkiem że odcinki rzutowane mają niepuste przekrycie.
+- Gdy odległość prostopadła między równoległymi ściankami spada poniżej progu przyklejenia, element automatycznie przesuwa się prostopadle po najkrótszej drodze, tak aby ścianki się stykały (attachment).
+- Po przyklejeniu ruch wskaźnika wzdłuż krawędzi target przesuwa element wyłącznie wzdłuż tej krawędzi; pozycja prostopadła jest zatrzaśnięta — element ślizga się po krawędzi.
+- Niewielkie ruchy prostopadłe nie zrywają attachmentu (histereza). Próg zerwania jest istotnie większy od progu przyklejenia, co zapobiega drganiu „przyklej/odklej" przy ruchu w okolicy granicy.
+- Wyraźny, skumulowany ruch prostopadły powyżej progu zerwania zwalnia attachment; od tej klatki element jest przeciągany swobodnie i może natychmiast utworzyć nowy attachment do innej krawędzi.
+- Wyłączenie SNAP togglem lub przytrzymanie dedykowanego klawisza wyłączającego SNAP natychmiast zrywa aktywny attachment.
+- Stan attached jest wizualnie sygnalizowany (np. podświetlenie krawędzi target).
+- Edge-snap działa również dla zaznaczonej grupy elementów oraz dla zablokowanego połączenia spawalniczego — wykorzystywane są wyłącznie krawędzie zewnętrznego konturu zbiorczego, a pozostałe elementy grupy są wykluczone z listy targetów.
+- Kształty bez prostoliniowych ścianek (np. przekrój czołowy rury) nie pełnią roli targetu edge-snap; mogą być natomiast przeciąganym elementem (przy ich wyrównywaniu działa wyłącznie point-snap).
+- Operacja przesunięcia z attachmentem i jego ewentualnym zerwaniem jest cofalna przez Undo jako pojedyncza operacja przesuwania.
 
 ---
 
@@ -783,14 +810,18 @@ Kryteria akceptacji:
 US-034b
 Tytuł: Blokowanie i odblokowywanie połączenia spawalniczego z elementami
 
-Opis: Jako użytkownik chcę zablokować połączenie spawalnicze z elementami, które dotyka, aby scalić je w jednostkę i odblokować dostęp do konwersji na sekwencję ściegów.
+Opis: Jako użytkownik chcę zablokować połączenie spawalnicze z elementami, które dotyka, aby scalić je w jednostkę i odblokować dostęp do konwersji na sekwencję ściegów. Chcę też móc odblokować jednostkę bez utraty wcześniej wygenerowanej sekwencji, jeśli nie zmieniłem geometrii połączenia.
 
 Kryteria akceptacji:
 
 - Opcja „Zablokuj połączenie z elementami" pojawia się wyłącznie gdy kształt połączenia dotyka co najmniej dwóch elementów.
 - Po kliknięciu opcji blokady powiązane elementy i kształt połączenia tworzą jednostkę — nie mogą być przesuwane niezależnie.
 - Po zablokowaniu opcja zmienia się na „Odblokuj połączenie z elementami".
-- Kliknięcie „Odblokuj" przywraca niezależność wszystkich elementów i usuwa przycisk „Konwertuj na sekwencję ściegów".
+- Kliknięcie „Odblokuj" przywraca niezależność wszystkich elementów (każdy element i samo połączenie można chwytać i przesuwać osobno) oraz ukrywa przycisk „Konwertuj na sekwencję ściegów".
+- Po odblokowaniu, jeśli wcześniej istniała sekwencja ściegów, jest ona zachowana w pamięci aplikacji (dormant) wraz z geometrią połączenia z momentu odblokowania; nie jest jednak renderowana na canvasie.
+- Ponowne kliknięcie „Zablokuj" — gdy geometria połączenia nie została zmieniona od czasu odblokowania — natychmiast przywraca zapamiętaną sekwencję ściegów wraz ze wszystkimi modyfikacjami liczby warstw, ściegów i numeracji; przycisk „Konwertuj" nie pojawia się.
+- Ponowne kliknięcie „Zablokuj" — gdy geometria połączenia została zmieniona od czasu odblokowania — kasuje zapamiętaną sekwencję; pojawia się przycisk „Konwertuj na sekwencję ściegów", którego kliknięcie generuje nową, domyślną sekwencję.
+- Usunięcie połączenia spawalniczego lub któregokolwiek z powiązanych elementów kasuje również zapamiętaną sekwencję dormant.
 - Operacja blokowania i odblokowania jest cofalna przez Undo.
 
 ---
