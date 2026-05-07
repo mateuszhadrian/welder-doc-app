@@ -43,6 +43,12 @@ These are non-obvious rules from `.ai/architecture-base.md` that infrastructure 
 - **History `groupId`** ties a shape-remove to its cascading `removeUnit` so one Ctrl+Z restores both atomically. Required when removing a `weld-joint` or any element in a unit's `elementIds`.
 - **SNAP has two coexisting modes** (`architecture-base.md` §10): point-snap (stateless, threshold 8 px, `weld-joint` mode + alignment) and edge-snap with attachment (stateful in `UISlice.attachment`, attach 8 px / release 16 px hysteresis, parallel-only). Both share the `snapEnabled` toggle and `Alt` temporary disable. `snapEngine.ts` exports pure functions — keep them Konva- and store-free for unit testing.
 
+## Zustand store conventions
+
+- **`useShallow` przy selektorach obiektowych.** Gdy komponent subskrybuje więcej niż jedno pole store'a naraz (np. `const { shapes, selection } = useCanvasStore(...)`), opakuj selektor w `useShallow` z `zustand/shallow`. Bez tego Zustand porównuje referencje zwróconego obiektu, a każda niezwiązana zmiana store'a re-renderuje komponent.
+- **`devtools` middleware tylko w dev.** Store powinien być owiknięty w `devtools()` z `zustand/middleware` warunkowo: `process.env.NODE_ENV !== 'production'`. Umożliwia inspekcję stanu i time-travel w Redux DevTools podczas implementacji slice'ów; zero kosztu w produkcji.
+- **Custom hook per slice.** Każdy slice eksportuje własny hook (`useShapesSlice`, `useHistorySlice`, `useUISlice` itd.) zamiast eksponować `useCanvasStore` bezpośrednio w komponentach. Enkapsuluje logikę selektora i ułatwia mockowanie w testach jednostkowych slice'ów.
+
 ## Project-specific configuration quirks
 
 - **Konva needs the `canvas` alias** to `./empty.js` in `next.config.ts` (already wired). This is impl-konva-specific; it gets removed when `impl-pixi/` ships. All `react-konva` users live inside `src/canvas-kit/impl-konva/` (and must be `'use client'`); the canvas root in `src/components/canvas/` is loaded with `next/dynamic({ ssr: false })`.
