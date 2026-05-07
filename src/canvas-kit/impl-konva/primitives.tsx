@@ -31,7 +31,7 @@ import type {
   PathProps,
   RectProps,
   TextProps
-} from '../primitives';
+} from '@/canvas-kit';
 
 type KonvaPointerHandler = (e: KonvaEventObject<PointerEvent>) => void;
 

@@ -7,7 +7,7 @@
  */
 
 import { devicePixelRatio } from '../constants';
-import type { RasterizeOptions } from '../primitives';
+import type { RasterizeOptions } from '@/canvas-kit';
 import { getActiveStage } from './activeStage';
 
 const CONTENT_PADDING_PX = 20;
