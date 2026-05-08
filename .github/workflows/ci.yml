@@ -32,6 +32,8 @@ jobs:
 
       - run: pnpm typecheck
 
+      - run: pnpm verify:routes
+
   unit-tests:
     name: Unit tests (Vitest)
     runs-on: ubuntu-latest

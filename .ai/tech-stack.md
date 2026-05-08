@@ -32,7 +32,7 @@
 
 **Wymagane konfiguracje:**
 
-- `tsconfig.json`: `"strict": true`, `"moduleResolution": "Bundler"`, `"jsx": "preserve"`, `"types": ["vitest/jsdom"]`
+- `tsconfig.json`: `"strict": true`, `"moduleResolution": "Bundler"`, `"jsx": "react-jsx"` (Next.js 16 automatycznie wymusza `react-jsx` przy buildzie — nie ustawiać `preserve`)
 - `next.config.ts` musi zawierać `turbopack.resolveAlias` dla `canvas` → `./empty.js` (patrz §6 Konva).
 
 ---
@@ -92,22 +92,28 @@
 
 | Pakiet | Wersja | Rola |
 |---|---|---|
-| `konva` | `^9.0.0` | Silnik canvas |
+| `konva` | `^9.3.0` | Silnik canvas (peer-dep `react-konva@^19.2.3` wymaga `konva@^9.3.0`) |
 | `react-konva` | `^19.2.3` | React bindings (peer-dep `react@19`) |
 
 **Wymagane konfiguracje:**
 
 - Wszystkie komponenty `react-konva` muszą być w plikach z `'use client'`.
 - Komponent `<Canvas>` ładowany przez `next/dynamic({ ssr: false })`.
-- `next.config.ts`:
+- `next.config.ts` (alias musi być wpięty w `withNextIntl(...)` — bez wrappera routing locale §5 nie działa):
   ```typescript
   import type { NextConfig } from 'next'
+  import createNextIntlPlugin from 'next-intl/plugin'
+
+  const withNextIntl = createNextIntlPlugin('./src/i18n/request.ts')
+
   const config: NextConfig = {
+    reactStrictMode: true,
     turbopack: {
       resolveAlias: { canvas: './empty.js' },
     },
   }
-  export default config
+
+  export default withNextIntl(config)
   ```
 - Plik `empty.js` w roocie projektu: pusty (`export {}`).
 
@@ -134,6 +140,16 @@
 **Cookies API**: używać współczesnego `getAll`/`setAll` (nie `get`/`set`/`remove`). Pełen `middleware.ts` chainuje:
 1. `@supabase/ssr` `updateSession()` (refresh tokenu)
 2. `next-intl` middleware (locale routing)
+
+**Trzy warianty klienta Supabase — zasada wyboru:**
+
+| Kontekst | Eksport helpera | Async | Plik helpera |
+|---|---|---|---|
+| Client Component, client-side hook | `createClient()` (`createBrowserClient` pod spodem) | nie | `src/lib/supabase/client.ts` |
+| Server Component, Route Handler, Server Action (cookie-based JWT) | `createClient()` (`createServerClient` pod spodem) | **tak** (`await cookies()`) | `src/lib/supabase/server.ts` |
+| Server-only operacje wymagające service-role (webhooki Paddle, crony) | `createAdminClient()` (`@supabase/supabase-js` z `SUPABASE_SERVICE_ROLE_KEY`) | nie (brak cookies) | `src/lib/supabase/server.ts` |
+
+Reguła: **Server Component i Route Handler z user-scoped operacjami zawsze używają `createClient()` z `server.ts`** — ma dostęp do ciasteczek HTTP (cookie-based JWT session) i przepuszcza RLS. `createBrowserClient` nie działa po stronie serwera (brak `document.cookie`). `createAdminClient` omija RLS — używać **wyłącznie** w handlerach, które weryfikują autoryzację innym sposobem (sygnatura webhooka, `Authorization: Bearer ${CRON_SECRET}`). Konsumenci muszą pamiętać o `await` przy server-side `createClient()` (czeka na `cookies()`); `createAdminClient()` jest synchroniczny — różne sygnatury są celowe.
 
 **Generowanie typów**:
 ```bash
@@ -194,7 +210,7 @@ npx supabase gen types typescript --project-id <id> --schema public > src/types/
   import 'vitest-canvas-mock'
   ```
 
-- `tsconfig.json` `compilerOptions.types` zawiera `["vitest/jsdom"]`.
+- Vitest globals (`describe`, `it`, `expect`) aktywne dzięki `globals: true` w `vitest.config.ts` — `tsconfig.json` celowo NIE ustawia `compilerOptions.types`, by nie wyłączyć auto-loadu `@types/node`/`@types/react`.
 
 ---
 
@@ -228,6 +244,24 @@ npx supabase gen types typescript --project-id <id> --schema public > src/types/
 
 **Konfiguracja**: `eslint.config.mjs` (flat config), `prettier.config.mjs`, `.prettierignore`.
 
+### 11.1 Pre-commit hooks i Conventional Commits
+
+| Pakiet | Wersja | Rola |
+|---|---|---|
+| `husky` | `^9.0.0` | Manager git hooks (pre-commit, commit-msg) — instalowany przez `prepare` w `package.json` |
+| `lint-staged` | `^15.0.0` | Uruchamianie `eslint --fix` + `prettier --write` tylko na zaaplikowanych plikach |
+| `@commitlint/cli` | `^19.0.0` | Walidacja Conventional Commits w hooku `commit-msg` |
+| `@commitlint/config-conventional` | `^19.0.0` | Reguły Conventional Commits (typy: `feat`, `fix`, `chore`, `docs`, `refactor`, `test`, `style`, `perf`, `build`, `ci`) |
+| `eslint-config-prettier` | `^9.1.0` | Wyłącza reguły ESLint kolidujące z Prettierem |
+
+**Wymagane pliki:**
+- `.husky/pre-commit` → `npx lint-staged`
+- `.husky/commit-msg` → `npx --no -- commitlint --edit "$1"`
+- `commitlint.config.mjs` (extends `@commitlint/config-conventional`)
+- `lint-staged` blok w `package.json` (lub osobny `.lintstagedrc`)
+
+Hooks instalują się automatycznie po `pnpm install` dzięki skryptowi `prepare: "husky"` (patrz §14).
+
 ---
 
 ## 12. Hosting / deployment / CI
@@ -245,11 +279,24 @@ npx supabase gen types typescript --project-id <id> --schema public > src/types/
 **`vercel.json`**:
 ```json
 {
+  "$schema": "https://openapi.vercel.sh/vercel.json",
   "regions": ["fra1"],
   "buildCommand": "pnpm build",
-  "installCommand": "pnpm install --frozen-lockfile"
+  "installCommand": "pnpm install --frozen-lockfile",
+  "crons": [
+    {
+      "path": "/api/cron/expire-subscriptions",
+      "schedule": "0 3 * * *"
+    },
+    {
+      "path": "/api/cron/cleanup-webhook-events",
+      "schedule": "0 2 * * 0"
+    }
+  ]
 }
 ```
+
+> ⚠️ **Production deploy guardrail:** `vercel.json:crons[]` deklaruje harmonogram dla endpointów, które po implementacji muszą istnieć w `src/app/api/cron/{expire-subscriptions,cleanup-webhook-events}/route.ts` i przyjmować `Authorization: Bearer ${CRON_SECRET}`. Pierwszy push na `main` **bez tych route'ów** spowoduje, że Vercel Cron uderzy w 404 — żaden downgrade planów po grace period nie zadziała, a `webhook_events` rosną bez retencji 90 dni. Pre-merge do `main`: jeśli `crons[]` nie pusty, sprawdź obecność odpowiadających `route.ts`. Vercel Cron wymaga planu Pro — zweryfikuj plan projektu Vercel przed pierwszym deployem produkcyjnym.
 
 ---
 
@@ -259,11 +306,15 @@ npx supabase gen types typescript --project-id <id> --schema public > src/types/
 |---|---|---|
 | `NEXT_PUBLIC_SUPABASE_URL` | client + server | URL projektu Supabase |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | client + server | Anon key (RLS chroni dane) |
-| `SUPABASE_SERVICE_ROLE_KEY` | **server only** | Wyłącznie w `app/api/paddle/webhook/route.ts` |
+| `SUPABASE_SERVICE_ROLE_KEY` | **server only** | Server-only operacje omijające RLS: `app/api/paddle/webhook/route.ts` (upsert do `subscriptions` i `webhook_events`), `app/api/cron/expire-subscriptions/route.ts` oraz `app/api/cron/cleanup-webhook-events/route.ts` (brak kontekstu JWT). `app/api/consent/route.ts` używa **klienta sesji** (`createClient` z `@supabase/ssr`) — RPC `record_consent_bundle()` jest `SECURITY DEFINER` i wykonuje się jako rola `postgres` (właściciel funkcji), nie jako `service_role`; klucz tutaj nie jest potrzebny. Bypass `block_protected_columns_update` realizowany przez gałąź `current_user = 'postgres'` (migracja `20260509000000_paddle_webhook_hardening.sql`). Nigdy w Client Component / Server Component. Helper: `createAdminClient()` z `src/lib/supabase/server.ts`. |
 | `PADDLE_WEBHOOK_SECRET` | server only | Weryfikacja signature webhooka Paddle |
 | `NEXT_PUBLIC_PADDLE_CLIENT_TOKEN` | client | Inicjalizacja Paddle.js w UI |
 | `NEXT_PUBLIC_PADDLE_ENV` | client | `sandbox` / `production` |
 | `NEXT_PUBLIC_APP_URL` | client + server | Public URL aplikacji (potrzebne do absolutnych linków) |
+| `CRON_SECRET` | server only | Weryfikacja `Authorization: Bearer` w `/api/cron/*` (Vercel Cron) |
+| `SUPABASE_PROJECT_ID` | CI/CD | Wymagany przez skrypt `pnpm supabase:types` |
+| `NEXT_PUBLIC_PADDLE_PRICE_ID_PRO_MONTHLY` | client | ID cennika Paddle dla planu Pro Monthly |
+| `NEXT_PUBLIC_PADDLE_PRICE_ID_PRO_ANNUAL` | client | ID cennika Paddle dla planu Pro Annual |
 
 **`.env.example`** zawiera wszystkie powyższe z pustymi wartościami i komentarzami.
 **`.env.local`** w `.gitignore` (Next.js domyślnie).
@@ -278,7 +329,7 @@ npx supabase gen types typescript --project-id <id> --schema public > src/types/
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint",
+    "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
@@ -288,7 +339,10 @@ npx supabase gen types typescript --project-id <id> --schema public > src/types/
     "test:coverage": "vitest run --coverage",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
-    "supabase:types": "supabase gen types typescript --project-id $SUPABASE_PROJECT_ID --schema public > src/types/database.ts"
+    "supabase:types": "dotenv -e .env.local -- bash -c 'supabase gen types typescript --project-id $SUPABASE_PROJECT_ID --schema public > src/types/database.ts'",
+    "supabase:types:local": "supabase gen types typescript --local --schema public > src/types/database.ts",
+    "verify:routes": "bash scripts/verify-routes.sh",
+    "prepare": "husky"
   },
   "engines": {
     "node": "22.x",
@@ -308,7 +362,7 @@ npx supabase gen types typescript --project-id <id> --schema public > src/types/
 next@^16.2.0
 react@^19.2.0
 react-dom@^19.2.0
-konva@^9.0.0
+konva@^9.3.0
 react-konva@^19.2.3
 zustand@^5.0.0
 immer@^10.0.0
@@ -345,11 +399,22 @@ vitest-canvas-mock@^0.3.0
 
 eslint@^9.0.0
 eslint-config-next@^16.0.0
+eslint-config-prettier@^9.1.0
 @typescript-eslint/eslint-plugin@^8.0.0
 @typescript-eslint/parser@^8.0.0
 prettier@^3.3.0
 prettier-plugin-tailwindcss@^0.6.0
+
+husky@^9.0.0
+lint-staged@^15.0.0
+@commitlint/cli@^19.0.0
+@commitlint/config-conventional@^19.0.0
+
+supabase@^2.0.0
+dotenv-cli@^7.4.0
 ```
+
+> **Lokalna instalacja CLI Supabase:** pakiet `supabase` w `devDependencies` pinuje wersję CLI razem ze stackiem. Dzięki temu `pnpm supabase start` / `pnpm supabase db reset` (CLAUDE.md sekcja Commands) wskazują na binarkę z `node_modules/.bin/`, a nie na potencjalnie nieaktualną instalację globalną (Homebrew / `npm i -g supabase`). Aktualizacja CLI to PR z bumpem wersji w `package.json`, a nie operacja per-developer-machine.
 
 ---
 
@@ -360,7 +425,7 @@ Wszystkie wersje powyżej tworzą spójny zestaw z **React 19 jako kotwicą**. T
 | Pakiet | Wersja | Odstępstwo | Powód |
 |---|---|---|---|
 | `@supabase/ssr` | `~0.10.0` | Pin do patch range | Beta API, breaking changes możliwe między minor |
-| `konva` | `^9.0.0` | Pin do major | Konva 10 (jeśli wyjdzie) wymusi sprawdzenie kompatybilności z `react-konva` |
+| `konva` | `^9.3.0` | Pin do minor | Wymaga `^9.3.0` (peer-dep `react-konva@^19.2.3`); Konva 10 (jeśli wyjdzie) wymusi sprawdzenie kompatybilności z `react-konva` |
 | `vitest-canvas-mock` | `^0.3.0` | Major < 1.0 | Aktywnie rozwijany port `jest-canvas-mock`, ale przed-1.0 |
 
 ---

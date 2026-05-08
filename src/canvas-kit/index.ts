@@ -23,13 +23,14 @@ export { rasterize } from './impl-konva';
 
 // Wejście pointerowe (znormalizowane gesty)
 export { usePointerInput } from './pointerInput';
-export type { PointerGesture, Point } from './pointerInput';
+export type { PointerGesture } from './pointerInput';
 
 // Stałe (DPR + hit-area)
 export { HIT_AREA_TOUCH, HIT_AREA_DESKTOP, devicePixelRatio } from './constants';
 
-// Typy props prymitywów (do użycia przez shape `Renderer`-y)
+// Typy props prymitywów + geometria 2D (kanoniczne źródło `Point`)
 export type {
+  Point,
   CommonShapeProps,
   GProps,
   RectProps,

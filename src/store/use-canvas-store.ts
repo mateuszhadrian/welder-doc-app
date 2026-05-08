@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { devtools } from 'zustand/middleware';
 import { immer } from 'zustand/middleware/immer';
 
 /**
@@ -11,7 +12,10 @@ export interface CanvasStore {
 }
 
 export const useCanvasStore = create<CanvasStore>()(
-  immer(() => ({
-    _placeholder: true
-  }))
+  devtools(
+    immer(() => ({
+      _placeholder: true as const
+    })),
+    { name: 'CanvasStore', enabled: process.env.NODE_ENV !== 'production' }
+  )
 );

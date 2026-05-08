@@ -1,4 +1,8 @@
-import type { AnchorEdge, AnchorPoint, Point } from '@/shapes/_base/types';
+// Geometria 2D (`Point`) z canvas-kit — kanoniczne źródło (architecture §22.7).
+// Domenowe `AnchorEdge` / `AnchorPoint` z shapes/_base — cykl odwrotny
+// (shapes/ → lib/snapEngine) jest zakazany.
+import type { Point } from '@/canvas-kit';
+import type { AnchorEdge, AnchorPoint } from '@/shapes/_base/types';
 
 /**
  * Czyste funkcje SNAP engine (architecture §10.4).

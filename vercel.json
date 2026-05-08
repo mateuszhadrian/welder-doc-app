@@ -2,5 +2,9 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "regions": ["fra1"],
   "buildCommand": "pnpm build",
-  "installCommand": "pnpm install --frozen-lockfile"
+  "installCommand": "pnpm install --frozen-lockfile",
+  "crons": [
+    { "path": "/api/cron/expire-subscriptions", "schedule": "0 3 * * *" },
+    { "path": "/api/cron/cleanup-webhook-events", "schedule": "0 2 * * 0" }
+  ]
 }

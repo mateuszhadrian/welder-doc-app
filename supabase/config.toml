@@ -31,6 +31,9 @@ site_url = "http://127.0.0.1:3000"
 additional_redirect_urls = ["http://127.0.0.1:3000"]
 jwt_expiry = 3600
 enable_signup = true
+# PRD US-001: minimalna długość hasła 8 znaków — egzekwowane po stronie GoTrue
+# (defense-in-depth obok walidacji w formularzu rejestracji).
+minimum_password_length = 8
 
 [auth.email]
 enable_signup = true

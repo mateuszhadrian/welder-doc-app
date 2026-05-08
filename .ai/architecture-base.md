@@ -48,11 +48,28 @@ Wymagania wydajnościowe: ≥ 30 FPS przy typowych scenach; < 200 ms reakcji UI 
 
 ```
 src/
+  proxy.ts                  ← Next 16 middleware (eksportuje proxy + config);
+                              chain: Supabase updateSession() → next-intl
+
+  i18n/                     ← konfiguracja next-intl (App Router)
+    routing.ts              ← defineRouting (locales: pl/en, defaultLocale: pl,
+                              localePrefix: 'as-needed', localeDetection: false)
+    request.ts              ← getRequestConfig (ładuje messages/{locale}.json)
+    navigation.ts           ← typed Link / redirect / router
+
+  types/
+    database.ts             ← supabase gen types typescript --schema public
+                              (regenerowany skryptem `pnpm supabase:types`)
+
+  messages/
+    pl.json                 ← tłumaczenia PL
+    en.json                 ← tłumaczenia EN
+
   shapes/
     _base/
       types.ts              ← Point, BaseShape, BoundingBox, HandleGeometry, AnchorPoint, FieldUpdate
       definition.ts         ← ShapeDefinition<S> interface
-    registry.ts             ← SHAPE_REGISTRY: Record<ShapeType, ShapeDefinition<any>>
+    registry.ts             ← SHAPE_REGISTRY: Partial<Record<ShapeType, ShapeDefinition<any>>> (pełny Record gdy wszystkie 8 kształtów MVP); dostęp przez getShapeDefinition(type)
     index.ts                ← Shape union, ShapeType union
     plate/
       types.ts
@@ -92,8 +109,9 @@ src/
     use-canvas-store.ts     ← złożony Zustand store
 
   components/
-    canvas/
-      CanvasApp.tsx
+    canvas/                 ← STREFA UPRZYWILEJOWANA (§22.3): może
+                              importować konva/react-konva bezpośrednio
+      CanvasApp.tsx         ← podpina usePointerInput; reklasyfikuje drag → pan/select na podstawie toolMode
       ShapeNode.tsx
       ShapeHandles.tsx      ← generyczny, registry-driven
       AnchorPoints.tsx      ← generyczny, registry-driven (tryb weld-joint)
@@ -113,34 +131,68 @@ src/
   canvas-kit/               ← warstwa abstrakcji silnika canvasu (§22)
     index.ts                ← reeksport prymitywów + CanvasShell + rasterize z aktywnej impl
     primitives.ts           ← typy props prymitywów (G, Rect, Line, Arc, Circle, Path, Text)
-    pointerInput.ts         ← normalizacja DOM PointerEvent → gesty (pinch/pan/drag/tap)
+    pointerInput.ts         ← normalizacja DOM PointerEvent → gesty (pinch/drag/tap;
+                              pan = drag w trybie hand — reklasyfikacja w CanvasApp)
     constants.ts            ← HIT_AREA_TOUCH/DESKTOP, devicePixelRatio helper
     impl-konva/             ← aktywna implementacja
       index.ts
       primitives.tsx        ← G→Group, Rect, Line, Arc, Circle, Path, Text (react-konva)
-      CanvasShell.tsx       ← <Stage>+<Layer>, podpina pointerInput
+      CanvasShell.tsx       ← <Stage>+<Layer>; singleton ref → activeStage.ts → rasterize
+      activeStage.ts        ← singleton ref do aktywnej Konva.Stage (czytany przez rasterize)
       rasterize.ts          ← stage.toDataURL → Blob
     impl-pixi/              ← przygotowane pod podmianę (post-MVP, jeśli zajdzie potrzeba)
 
   lib/
-    captureGeometry.ts      ← fasada rejestru
-    shapeBounds.ts          ← fasada rejestru
-    snapEngine.ts           ← logika SNAP
-    weldAutosize.ts         ← auto-dopasowanie weld-joint
+    supabase/
+      client.ts             ← createBrowserClient (Client Components, browser hooks)
+      server.ts             ← createClient (Server Components / Route Handlers)
+                              + createAdminClient (service_role; tylko server-side)
+      middleware.ts         ← updateSession() — chain w proxy.ts; refresh JWT
+      errors.ts             ← BusinessError enum + mapPostgrestError/mapAuthError
+                              (deterministyczne mapowanie kodów DB/Auth na klucze i18n)
+      profile.ts            ← updateProfile() wrapper — filtruje protected fields
+                              (plan, paddle_customer_id, current_consent_version)
+                              przed PATCH user_profiles; TypeScript egzekwuje SafeUpdate
+    captureGeometry.ts      ← reeksport SHAPE_REGISTRY[type].captureGeometry
+                              (used by store: commitShapeUpdate)
+    shapeBounds.ts          ← reeksport SHAPE_REGISTRY[type].getBoundingBox
+                              (used by SNAP, exportEngine, multi-select)
+    snapEngine.ts           ← logika SNAP (czyste funkcje — bez Konvy / store'u)
     documentCodec.ts        ← serialize/deserialize sceny
     exportEngine.ts         ← eksport PNG/JPG (wywołuje canvas-kit.rasterize)
     overlapDetector.ts      ← wykrywanie nakładania weld-joint z elementami
+    ipAnonymize.ts          ← anonimizacja IP do /24 (IPv4) / /48 (IPv6) — RODO motyw 30
 
   app/
-    (auth)/
-      login/page.tsx
-      register/page.tsx
-      reset-password/page.tsx
-    (app)/
-      canvas/[projectId]/page.tsx
-      projects/page.tsx
-    layout.tsx
-    page.tsx
+    [locale]/               ← segment locale next-intl (pl | en); WSZYSTKIE
+                              page.tsx i layout.tsx wywołują setRequestLocale(locale)
+                              przed użyciem hooków next-intl
+      layout.tsx            ← NextIntlClientProvider + generateStaticParams
+      page.tsx              ← landing
+      (auth)/
+        login/page.tsx
+        register/page.tsx
+        reset-password/page.tsx
+      (app)/
+        canvas/[projectId]/page.tsx
+        projects/page.tsx
+    api/                    ← Route Handlers (sekretne / server-side; szczegóły §16)
+      health/route.ts                              (GET)
+      consent/route.ts                             (POST)
+      user/export/route.ts                         (GET)
+      user/account/route.ts                        (DELETE — RODO art. 17, re-auth wymagana)
+      paddle/webhook/route.ts                      (POST)
+      cron/expire-subscriptions/route.ts           (GET)
+      cron/cleanup-webhook-events/route.ts         (GET)
+    globals.css             ← Tailwind v4 (@import + @theme + @variant dark)
+
+tests/                      ← Vitest integration / cross-module suites
+                              (testy unit pojedynczego helpera mogą być
+                               co-locowane jako src/lib/<x>.test.ts —
+                               vitest.config.ts include obejmuje oba
+                               wzorce)
+e2e/                        ← Playwright e2e + visual regression
+supabase/                   ← Supabase CLI: config.toml + migrations/ + seed.sql
 ```
 
 ---
@@ -150,7 +202,10 @@ src/
 ### `src/shapes/_base/types.ts`
 
 ```typescript
-export interface Point { x: number; y: number }
+// Point — kanoniczne źródło: src/canvas-kit/primitives.ts (geometria 2D należy do silnika).
+// Re-eksport tutaj dla wygody konsumentów `shapes/`.
+export type { Point } from '@/canvas-kit'
+import type { Point } from '@/canvas-kit'
 
 export interface BaseShape {
   id: string
@@ -241,7 +296,19 @@ export interface ValidationError {
 ### `src/shapes/registry.ts`
 
 ```typescript
-export const SHAPE_REGISTRY: Record<ShapeType, ShapeDefinition<any>> = {
+// Partial podczas implementacji (kształty dodawane iteracyjnie).
+// Gdy wszystkie 8 kształtów MVP zaimplementowane → zmienić Partial<Record> na Record.
+export const SHAPE_REGISTRY: Partial<Record<ShapeType, ShapeDefinition<any>>> = {};
+
+// Jedyny dostęp do registry z gwarancją runtime (rzuca Error jeśli type niezarejestrowany):
+export function getShapeDefinition<S extends BaseShape>(type: ShapeType): ShapeDefinition<S>
+```
+
+Docelowe wpisy (dodawane wraz z kolejnymi kształtami):
+
+```typescript
+// Docelowa zawartość SHAPE_REGISTRY po implementacji wszystkich kształtów MVP:
+{
   'plate':              PlateDefinition,
   'pipe-front':         PipeFrontDefinition,
   'pipe-longitudinal':  PipeLongitudinalDefinition,
@@ -252,6 +319,8 @@ export const SHAPE_REGISTRY: Record<ShapeType, ShapeDefinition<any>> = {
   'weld-joint':         WeldJointDefinition,
 }
 ```
+
+**Dostęp do registry:** zawsze przez `getShapeDefinition(type)` — nigdy przez `SHAPE_REGISTRY[type]` bezpośrednio (może zwrócić `undefined` dopóki kształt nie jest zarejestrowany).
 
 **Dodanie nowego kształtu — 4 miejsca:**
 1. Nowy katalog `src/shapes/[typ]/` z `types.ts`, `handles.ts`, `anchors.ts` (eksportuje `anchors()` i — jeśli kształt ma proste ścianki — `edges()`), `index.ts`, `PropertiesPanel.tsx`
@@ -287,15 +356,15 @@ Anchor edges (edge-snap): każda widoczna ścianka prostoliniowa (zależnie od t
 ```typescript
 interface PipeFrontShape extends BaseShape {
   type: 'pipe-front'
-  outerRadius: number
-  wallThickness: number    // constraint: < outerRadius − 1
+  outerDiameter: number
+  wallThickness: number    // constraint: < outerDiameter / 2 − 1
 }
 ```
 
 Wizualizacja: pierścień (koło wewnątrz koła).  
 Anchor points (point-snap): 4 kardynalne + środek.  
 Anchor edges: brak (kształt czysto okrągły — nie uczestniczy w edge-snap jako target).  
-Uchwyty: `outerRadius` skaluje uchwyt; `wallThickness` absolutna z walidacją inline.
+Uchwyty: skalowanie uchwytem zmienia `outerDiameter` (`Renderer` przelicza `radius = outerDiameter / 2`); `wallThickness` absolutna z walidacją inline. `outerDiameter` jest single source of truth — spójność z `pipe-longitudinal` oraz PRD US-019 ("średnica zewnętrzna").
 
 ### `pipe-longitudinal`
 
@@ -354,7 +423,6 @@ interface WeldJointShape extends BaseShape {
   rootGap?: number
   depth?: number
   diameter?: number       // spot
-  _geometryChecksum?: string   // do walidacji dormant sequence
 }
 ```
 
@@ -427,7 +495,9 @@ Stan `'detached'` pełni rolę „pamięci dormant" — unit istnieje, ale dla w
 „Zablokuj" widoczne, gdy `weld-joint` nachodzi bbox-em na ≥ 2 elementy i nie istnieje unit dla tego `weldJointId`. Klik tworzy `WeldUnit` z `state='locked'`, `sequenceData=null`, `sequenceJointChecksum=null`.
 
 **`'locked' → 'sequence'` (Konwertuj):**
-Generuje świeże `WeldBeadSequenceData` z bieżącej geometrii `weld-joint`. `sequenceJointChecksum = checksum(weldJoint)`.
+Generuje świeże `WeldBeadSequenceData` z bieżącej geometrii `weld-joint`. `sequenceJointChecksum = computeWeldJointChecksum(weldJoint)`.
+
+`computeWeldJointChecksum(s: WeldJointShape): string` to **pure function** w `src/weld-units/bead-sequence.ts` — deterministyczny hash kluczowych pól geometrycznych (`joinType`, `leg1`, `leg2`, `angle`, `rootGap`, `depth`, `diameter`). Nigdy nie jest przechowywana w `WeldJointShape` (pole `_geometryChecksum` zostało usunięte — checksum jest zawsze obliczany on-the-fly).
 
 **`'sequence' → 'detached'` (Odblokuj z sekwencji):**
 `state='detached'`. `sequenceData` i `sequenceJointChecksum` pozostają nietknięte — to one zasilają potencjalne przywrócenie. Elementy i złącze odzyskują niezależność ruchu, ale unit zostaje w storze.
@@ -437,7 +507,7 @@ Generuje świeże `WeldBeadSequenceData` z bieżącej geometrii `weld-joint`. `s
 
 **`'detached' → 'sequence' | 'locked'` (Zablokuj ponowne):**
 Wymaga, by `weld-joint` ponownie nachodził ≥ 2 elementy.
-- `sequenceData != null` AND `checksum(currentWeldJoint) === sequenceJointChecksum` → `state='sequence'` (przywrócenie 1:1, sekwencja widoczna natychmiast, bez przycisku Konwertuj).
+- `sequenceData != null` AND `computeWeldJointChecksum(currentWeldJoint) === sequenceJointChecksum` → `state='sequence'` (przywrócenie 1:1, sekwencja widoczna natychmiast, bez przycisku Konwertuj).
 - W przeciwnym razie → `state='locked'`, `sequenceData=null`, `sequenceJointChecksum=null` (świeży start; pojawia się Konwertuj).
 
 **Zniszczenie unitu:** usunięcie `weld-joint` lub któregokolwiek elementu z `elementIds` kasuje unit wraz z dormant. Brak osobnej akcji „skasuj pamięć dormant" — naturalna ścieżka to modyfikacja geometrii złącza w stanie `'detached'` przed kolejnym Zablokuj.
@@ -731,7 +801,7 @@ import { CanvasShell, GroupLayer, OverlayLayer } from '@/canvas-kit'
 ```
 
 Mapowanie w aktywnej implementacji `canvas-kit/impl-konva/`:
-- `CanvasShell` → `<Stage pixelRatio={devicePixelRatio}>`
+- `CanvasShell` → `<Stage pixelRatio={devicePixelRatio()}>` (`devicePixelRatio` z `@/canvas-kit` jest funkcją SSR-safe — patrz `src/canvas-kit/constants.ts`)
 - `GroupLayer` / `OverlayLayer` → `<Layer>`
 - `G/Rect/Line/Arc/Circle/Path/Text` → `<Group>/<Rect>/<Line>/<Arc>/<Circle>/<Path>/<Text>` z `react-konva`
 
@@ -750,7 +820,7 @@ Mapowanie w aktywnej implementacji `canvas-kit/impl-konva/`:
 - Touch 1 palec → pan; pinch → zoom
 - Viewport ograniczony do granic obszaru roboczego (`canvasWidth × canvasHeight`)
 - Widok startowy po wczytaniu: zoom-to-fit, padding ≤ 40 px
-- Pinch-to-zoom: śledzenie dwóch `pointerId` w `canvas-kit/pointerInput.ts` (nie w `CanvasApp.tsx`). Komponenty domeny otrzymują znormalizowane gesty (`pinch | pan | drag | tap`) z `pointerInput`. Nie używać `gesturestart`/`gesturechange` ani natywnych eventów `e.evt.touches[]` Konvy — pinch implementujemy wyłącznie przez Pointer Events API.
+- Pinch-to-zoom: śledzenie dwóch `pointerId` w `canvas-kit/pointerInput.ts` (nie w `CanvasApp.tsx`). Komponenty domeny otrzymują znormalizowane gesty (`pinch | drag | tap`) z `pointerInput`; reklasyfikacja `drag` → pan dzieje się w `CanvasApp.tsx` na podstawie `toolMode` i hit-testu (`canvas-kit` jest engine-agnostic i nie zna trybów aplikacji). Nie używać `gesturestart`/`gesturechange` ani natywnych eventów `e.evt.touches[]` Konvy — pinch implementujemy wyłącznie przez Pointer Events API.
 
 ### Obsługa dotykowa
 
@@ -957,7 +1027,7 @@ Plany Guest i Free: powtarzający się tekst po przekątnej, pokrywający całą
 
 ### Walidacja
 
-`shapes.length === 0 && weldUnits.length === 0` → blokada eksportu z toastem.
+`shapes.length === 0` → blokada eksportu z toastem. (`weldUnits.length === 0` jest zawsze implikowane przez `shapes.length === 0`, bo `removeShape(weld-joint)` kaskaduje na `removeUnit` — sprawdzanie obu warunków jest redundantne.)
 
 ---
 
@@ -1017,7 +1087,34 @@ Kod migracyjny pisany przy każdej realnej zmianie schematu; stare dokumenty mus
 - Rejestracja: email + hasło (format email, min. 8 znaków)
 - Logowanie, wylogowanie, reset przez email (link ważny min. 1 h)
 - Sesja persystowana między odświeżeniami
-- Rejestracja: obowiązkowy checkbox zgody; wersja zgody zapisywana w `user_profiles`
+- Rejestracja: obowiązkowy checkbox zgody; zdarzenie zgody zapisywane w `consent_log` (append-only) z anonimizacją IP po stronie serwera; denormalizacja aktywnej wersji w `user_profiles.current_consent_version`
+
+### Przepływ rejestracji z consent (kolejność operacji)
+
+Formularz rejestracji wykonuje **dwa kolejne wywołania** w tym samym `onSubmit`:
+
+```
+1. supabase.auth.signUp({ email, password })
+   ↓ sukces → sesja
+     - PROD (Supabase Cloud, enable_confirmations = ON): email unverified, email_confirmed_at = NULL
+     - DEV  (lokalny config.toml, enable_confirmations = false): auto-confirmed, email_confirmed_at = now()
+2. POST /api/consent { types: ['terms_of_service','privacy_policy','cookies'], version, userAgent }
+   ↓ handler anonimizuje IP z nagłówka X-Forwarded-For, używa klienta sesji
+     (createClient z @supabase/ssr) i wywołuje RPC `record_consent_bundle()`
+     (SECURITY DEFINER, wykonuje się jako rola `postgres` — nie service_role).
+     Funkcja waliduje auth.uid() = p_user_id i atomowo wstawia 3 wiersze do
+     consent_log oraz (gdy p_accepted) aktualizuje user_profiles.current_consent_version.
+     SUPABASE_SERVICE_ROLE_KEY nie jest tu potrzebny.
+```
+
+> **Konfiguracja prod:** Supabase Cloud → Auth → Settings musi mieć `Enable email confirmations = ON` + skonfigurowany custom SMTP (Resend/Postmark) **przed** pierwszą rejestracją produkcyjną. Bez confirmations on polityka RLS `documents` (`email_confirmed_at IS NOT NULL`) jest faktycznie bez efektu — patrz `db-plan.md` §5.13a.
+
+**Obsługa błędów:**
+- `signUp()` fail → walidacja formularza, brak POST consent
+- `signUp()` ok + `POST /api/consent` fail → toast z możliwością ponowienia (handler waliduje brak duplikatu typu w bundle przed INSERT-em); użytkownik **nie** musi się ponownie rejestrować; przy następnym zalogowaniu aplikacja sprawdza `current_consent_version IS NULL` i wymusza ponowny modal zgody przed wejściem na kanwas
+- Brak rollback `signUp()`: Supabase Auth nie oferuje atomowego rollbacku auth+insert; akceptujemy „unverified user bez zgody" jako stan przejściowy (RLS na `documents` blokuje zapis przez `email_confirmed_at IS NOT NULL` — w PROD; w DEV ten stan jest natychmiast skończony przez auto-confirm)
+
+**Weryfikacja zgody przy sesji:** przy każdym zalogowaniu pobierz `user_profiles.current_consent_version`. Jeśli `NULL` lub starsza niż aktualna wersja TOS/PP → pokaż modal zgody przed wejściem do aplikacji (Route: `/[locale]/consent-required`). Zdarzenie ponownej zgody = `POST /api/consent` (bundle z aktualną wersją); handler wykona INSERT do `consent_log` i atomowo ustawi `current_consent_version` (kolumna chroniona triggerem przed bezpośrednim UPDATE z klienta — patrz `db-plan.md` §1.2).
 
 ### Tryb gościa
 
@@ -1045,47 +1142,94 @@ Logika limitów: w `ShapesSlice.addShape`; plan pobierany z `user_profiles` przy
 
 ## 15. Schemat bazy danych
 
-```sql
-CREATE TABLE documents (
-  id             UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
-  owner_id       UUID        REFERENCES auth.users NOT NULL,
-  name           TEXT        NOT NULL DEFAULT 'Nowy projekt',
-  data           JSONB       NOT NULL,
-  schema_version INT         NOT NULL DEFAULT 1,
-  share_token    TEXT        UNIQUE,         -- zarezerwowane (post-MVP)
-  created_at     TIMESTAMPTZ DEFAULT now(),
-  updated_at     TIMESTAMPTZ DEFAULT now()
-);
+> **Source of truth: `.ai/db-plan.md`.** Pełne typy, constrainty, triggery, indeksy, polityki RLS i funkcje `SECURITY DEFINER` — wyłącznie tam. Niniejsza sekcja zawiera **tylko diagram relacji + listę tabel**, by uniknąć dryfu DDL między dwoma plikami.
 
-ALTER TABLE documents ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "owner only" ON documents USING (owner_id = auth.uid());
+### Diagram
 
-CREATE TABLE user_profiles (
-  id              UUID    PRIMARY KEY REFERENCES auth.users,
-  plan            TEXT    NOT NULL DEFAULT 'free',  -- 'free' | 'pro'
-  paddle_customer TEXT,
-  consent_version TEXT,
-  consent_at      TIMESTAMPTZ,
-  locale          TEXT    DEFAULT 'pl'
-);
+```
+auth.users ──1:1── user_profiles
+   │
+   ├──1:N── documents      (owner_id, ON DELETE CASCADE)
+   ├──1:N── subscriptions  (user_id, ON DELETE SET NULL — audyt billingu zachowany)
+   └──1:N── consent_log    (user_id, ON DELETE CASCADE, append-only)
 
-ALTER TABLE user_profiles ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "self only" ON user_profiles USING (id = auth.uid());
+webhook_events  (samodzielne, dostęp wyłącznie service_role)
 ```
 
-Limit projektów Free: `SELECT COUNT(*) FROM documents WHERE owner_id = auth.uid()` przed zapisem.
+### Tabele
+
+| Tabela | Cel | Kluczowe ograniczenia / triggery |
+|---|---|---|
+| `user_profiles` | 1:1 z `auth.users`; cache `plan`, `paddle_customer_id`, `current_consent_version`, `locale` | `block_protected_columns_update` chroni `plan`/`paddle_customer_id`/`current_consent_version` przed zapisem z roli `authenticated`. Dwa kanały bypass'a (zgodne intencjonalnie): **DB-side** (`current_user = 'postgres'`) — wszystkie SECURITY DEFINER funkcje wykonujące się jako rola właściciela: `record_consent_bundle` (zapisuje `current_consent_version`), `refresh_user_plan_from_subscriptions` (zapisuje `plan`), `sync_paddle_customer` (zapisuje `paddle_customer_id`); **App-side** (`auth.role() = 'service_role'`) — `createAdminClient` w `app/api/paddle/webhook/route.ts` przy `customer.*` wykonuje bezpośredni `UPDATE user_profiles SET paddle_customer_id = …`, omija block-trigger przez tę gałąź. Patrz `db-plan.md` §1.2. |
+| `documents` | Pojedynczy projekt; cała scena w JSONB | `data` JSONB ≤ 5 MB; `check_free_project_limit` blokuje 2. projekt dla planu Free; `sync_schema_version_from_data` synchronizuje `schema_version` z `data->>'schemaVersion'` |
+| `subscriptions` | Aktualny stan subskrypcji Paddle (1 wiersz / `paddle_subscription_id`) | Mutacje tylko z `service_role`; trigger `subscriptions_after_iu_refresh_plan` (insert/update of `status, current_period_end, user_id`) odświeża `user_profiles.plan` |
+| `consent_log` | Append-only audyt zgód RODO (TOS / PP / cookies) | Brak `UPDATE`/`DELETE`; bundle insert + `current_consent_version` UPDATE atomowo przez `record_consent_bundle()` |
+| `webhook_events` | Idempotencja webhooków + audyt techniczny | Brak polityk RLS = tylko `service_role`; `UNIQUE (provider, external_event_id)` |
+
+### RLS (przegląd)
+
+| Tabela | Polityki |
+|---|---|
+| `documents` | `FOR ALL TO authenticated USING owner_id = auth.uid() AND email_confirmed_at IS NOT NULL` |
+| `user_profiles` | `SELECT` + `UPDATE` gdzie `id = auth.uid()` |
+| `subscriptions` | `SELECT` gdzie `user_id = auth.uid()` |
+| `consent_log` | `SELECT` + `INSERT` gdzie `user_id = auth.uid()` (append-only) |
+| `webhook_events` | brak polityk → tylko `service_role` |
+
+Pełne specyfikacje: `db-plan.md` §1.2 – §1.6 (kolumny + triggery), §3 (indeksy), §4 (RLS), §4.7 (funkcje `SECURITY DEFINER`).
 
 ---
 
 ## 16. API (Next.js Route Handlers)
 
 Operacje CRUD dokumentów i auth: Supabase client SDK bezpośrednio (Row Level Security).  
-Route Handlers tylko dla operacji wymagających server-side secret:
+Route Handlers dla operacji wymagających server-side secret lub kontekstu serwera:
 
 ```
-POST  /api/paddle/webhook    ← aktualizacja planu po płatności
-GET   /api/health
+POST   /api/paddle/webhook          ← weryfikacja podpisu Paddle + upsert subskrypcji; trigger DB aktualizuje plan
+POST   /api/consent                 ← zapis zgody RODO z anonimizacją IP po stronie serwera (RODO motyw 30)
+GET    /api/user/export             ← eksport danych użytkownika: dokumenty + consent_log (RODO art. 20)
+DELETE /api/user/account            ← trwałe usunięcie konta (RODO art. 17); re-auth hasłem + `confirmation: "DELETE"`;
+                                       kaskada DB: documents + consent_log CASCADE, subscriptions SET NULL
+GET    /api/health
+GET    /api/cron/expire-subscriptions     ← Vercel Cron 03:00 UTC daily; woła refresh_expired_plans()
+GET    /api/cron/cleanup-webhook-events   ← Vercel Cron 02:00 UTC Sunday; retencja 90 dni webhook_events
 ```
+
+**Middleware:** `src/proxy.ts` (nie standardowa `middleware.ts`) eksportuje `proxy` i `config`. Łańcuch wywołań: `updateSession()` (Supabase `@supabase/ssr`) → `next-intl` middleware. Kolejność jest obowiązkowa — Supabase musi odświeżyć token przed routingiem locale.
+
+**Wyłączenie `/api/*` z proxy matchera (`?!api`):** Route Handlery nie przechodzą przez `updateSession()` w `proxy.ts` (matcher zaczyna się od negatywnej lookahead `?!api`). Odświeżenie tokenu odbywa się per-request wewnątrz handlera przy pierwszym wywołaniu `auth.getUser()` — `createServerClient` z `@supabase/ssr` rejestruje handler `cookies.setAll`, który zapisuje odświeżone tokeny do `Response`. Konsekwencja: każdy Route Handler wymagający sesji **musi** wywołać `auth.getUser()` (lub `auth.getSession()`) **przed** dowolną operacją na danych użytkownika — w przeciwnym razie operuje na potencjalnie wygasłym tokenie z poprzedniego requestu. Endpointy publiczne (`/api/health`) i webhook (`/api/paddle/webhook` — autoryzacja przez sygnaturę HMAC) i crony (`/api/cron/*` — `Authorization: Bearer ${CRON_SECRET}`) nie odczytują sesji użytkownika i nie podlegają tej zasadzie.
+
+### Duplikowanie dokumentu (US-012)
+
+Operacja **client-side** — bez dedykowanego Route Handlera:
+
+```typescript
+// 1. Pobierz oryginał
+const { data: original } = await supabase
+  .from('documents')
+  .select('name, data, schema_version')
+  .eq('id', sourceId)
+  .single()
+
+// 2. Wstaw kopię (id generowane przez DB default)
+const { error } = await supabase
+  .from('documents')
+  .insert({ name: `${original.name} (kopia)`, data: original.data, schema_version: original.schema_version })
+```
+
+Trigger `check_free_project_limit()` automatycznie rzuca `project_limit_exceeded` przy próbie duplikacji na planie Free (limit 1 projektu). Aplikacja mapuje przez `error.message.includes('project_limit_exceeded')` na toast upgrade CTA.
+
+**Egzekwowanie limitu Free (UI ↔ DB, defense-in-depth):**
+
+- **UI (warstwa pierwszej linii):** przyciski `Duplikuj` / `Nowy projekt` w `ProjectList.tsx` są `disabled` dla `useUserPlan().plan === 'free'` gdy `projects.length >= 1`. Tooltip + CTA upgrade tłumaczony przez `useTranslations('errors.project_limit_exceeded')`.
+- **DB (defense-in-depth):** trigger `check_free_project_limit()` rzuca `RAISE EXCEPTION 'project_limit_exceeded'` jeśli UI permitów (np. po race-condition między tabami albo w pierwszym tiku przy stale plan cache). Aplikacja łapie błąd po `error.message.includes('project_limit_exceeded')` i renderuje ten sam toast co warstwa UI — single source of truth dla copy w `messages/{pl,en}.json` pod kluczem `errors.project_limit_exceeded`.
+
+Dlaczego dwa poziomy: UI disabled daje natychmiastowy feedback bez round-tripa do DB; DB trigger gwarantuje, że obejście DevTools / bezpośrednie wywołanie REST nie złamie limitu planu.
+
+### Reguły implementacji checkout
+
+**Checkout Paddle (US-045) — wymaganie `customData.user_id`:** call do `Paddle.Checkout.open({...})` MUSI ustawiać `customData: { user_id: <auth.uid()> }`. Bez tego pierwszy webhook subskrypcji idzie przez 3-stopniowy lookup (`customData → paddle_customer_id → email`) i może dotrzeć do orphan log, jeśli email Paddle różni się od Supabase Auth (np. user kupił Pro przez inny adres niż w `auth.users`, albo email jeszcze niepotwierdzony). Eventual consistency przez trigger `sync_paddle_customer` zwykle „dogania" stan, ale pierwszy webhook może nie zaaplikować efektu na `user_profiles`. Ten wymóg **nie jest weryfikowany przez kod handler'a** — PR-checklist musi go wymusić ręcznie. Patrz `api-plan.md` §2.1 (Recovery flow).
 
 ---
 
@@ -1099,35 +1243,50 @@ src/messages/
   en.json
 ```
 
-Lokalizacja: ustawienia przeglądarki przy pierwszej wizycie → zapis w localStorage i `user_profiles.locale`. Przełącznik PL/EN w UI.  
-Zero hardcoded stringów w komponentach — wszystkie teksty w plikach messages.
+**Routing locale (`src/i18n/routing.ts`):** `defineRouting({ locales: ['pl','en'], defaultLocale: 'pl', localePrefix: 'as-needed', localeDetection: false })`. Detekcja preferencji przeglądarki (`Accept-Language`) jest **świadomie wyłączona** — uniknięcie zaskakującego dla użytkownika redirectu z `/` na `/en` przy pierwszej wizycie z anglojęzycznej przeglądarki, oraz uproszczenie cache'owania krawędziowego dla domyślnego locale.
+
+**Rozpoznawanie locale w runtime (kolejność):**
+1. Pathname URL (`/en/...` → `en`; brak prefiksu → `pl`, bo `localePrefix: 'as-needed'`).
+2. Cookie `NEXT_LOCALE` (zapisywane przez `next-intl` na ręcznej zmianie języka).
+3. `routing.defaultLocale` (`'pl'`).
+
+**Persystencja preferencji użytkownika:**
+- **Gość:** wybór języka w UI → cookie `NEXT_LOCALE` (zarządzane przez `next-intl`) + opcjonalnie `localStorage` jako fallback.
+- **Zalogowany:** dodatkowo `UPDATE user_profiles.locale = '<wybrany>'` (zapis przez Supabase SDK). Po następnym logowaniu (zwłaszcza na innym urządzeniu) layout root wykonuje `redirect` na `/<user.locale>/...`, jeśli `pathname locale ≠ user.locale`.
+
+**Wymagania per `page.tsx` / `layout.tsx`:** każda strona pod segmentem `[locale]` wywołuje `setRequestLocale(locale)` przed pierwszym hookiem `next-intl` (`useTranslations`, `getMessages`). `generateStaticParams()` zwraca komplet locali (`routing.locales.map((locale) => ({ locale }))`) — wymagane dla SSG.
+
+Zero hardcoded stringów w komponentach — wszystkie teksty w `src/messages/{pl,en}.json` czytane przez `useTranslations(...)`.
 
 ---
 
 ## 18. CI/CD i deployment
 
 ```
-GitHub Actions
-  ├── on: pull_request
-  │     ├── lint (ESLint, tsc --noEmit)
-  │     ├── test:unit (Vitest)
-  │     └── test:e2e (Playwright — headless Chromium)
+GitHub Actions  (.github/workflows/ci.yml)
+  ├── on: pull_request → main
+  │     ├── lint-and-typecheck   (ESLint flat config + tsc --noEmit)
+  │     ├── unit-tests           (Vitest single-run)
+  │     ├── e2e-mandatory        (Playwright — chromium-desktop, jedyny obowiązkowy)
+  │     └── e2e-informational    (chromium-mobile / firefox-desktop / webkit-desktop;
+  │                               continue-on-error — informacyjne, nie blokują merge)
   └── on: push → main
-        ├── build (next build)
-        └── deploy → Vercel (production)
+        └── (ten sam zestaw jobów co dla pull_request — bez deploy stepa)
+
+Deployment (PROD i preview)
+  └── Vercel GitHub Integration (NIE GitHub Actions)
+        ├── push do main           → production deploy
+        ├── push do branch z PR    → preview URL (komentowany przez Vercel bot pod PR)
+        └── revert / rollback      → konsolą Vercel (Deployments → Promote)
 ```
 
-- **Preview:** Vercel preview URL dla każdego PR
-- **Production:** Vercel + Supabase EU Frankfurt
+> **Brak deploy stepa w `ci.yml`** — Vercel GitHub Integration robi to atomowo. Dodanie `vercel deploy` do GitHub Actions zdublowałoby deploy i wymagałoby sekretu `VERCEL_TOKEN`. Tę zasadę dokumentuje `tech-stack.md` §12.
 
-Zmienne środowiskowe:
-```
-NEXT_PUBLIC_SUPABASE_URL
-NEXT_PUBLIC_SUPABASE_ANON_KEY
-SUPABASE_SERVICE_ROLE_KEY      ← tylko server-side
-PADDLE_WEBHOOK_SECRET
-NEXT_PUBLIC_APP_URL
-```
+- **Preview:** Vercel preview URL dla każdego PR (Vercel Integration)
+- **Production:** Vercel (region `fra1`) + Supabase EU-Frankfurt
+- **Vercel Cron:** harmonogram w `vercel.json` (`crons[]`); endpointy w `app/api/cron/*` autoryzowane nagłówkiem `Authorization: Bearer ${CRON_SECRET}`. **Production deploy guardrail:** `vercel.json:crons[]` musi mieć pokrycie istniejącymi `route.ts` przed pierwszym push'em na `main` — inaczej Vercel Cron uderzy w 404 i nie zadziała ani downgrade planów po grace period (`refresh_expired_plans()`), ani retencja 90 dni `webhook_events`. Vercel Cron wymaga planu Pro projektu Vercel.
+
+**Zmienne środowiskowe:** pełna lista w `tech-stack.md` §13 (jedyne źródło prawdy). `.env.example` w roocie repo zawiera szablon do skopiowania jako `.env.local`. Każda zmiana zestawu zmiennych aktualizowana w `tech-stack.md` §13 + `.env.example` jednocześnie — niniejszy dokument celowo nie duplikuje listy, by wykluczyć dryf.
 
 ---
 
@@ -1142,6 +1301,8 @@ Przykład: `profile-u`.
 
 Żaden inny plik nie ulega modyfikacji — `ShapeHandles`, `PropertiesSidebar`, `snapEngine` (point + edge), `documentCodec`, `exportEngine` działają automatycznie. `edges()` jest opcjonalne; brak implementacji oznacza, że kształt nie uczestniczy w edge-snap jako target.
 
+> **⚠ BREAKING change przy pierwszym kształcie:** dziś `AllShapeGeometry = {}` (scaffold w `src/store/types.ts`) — to akceptowalne tylko dopóki `SHAPE_REGISTRY` jest pusty. Krok 4 dla **pierwszego** kształtu **musi** zastąpić scaffolda pełną intersectionem (`Omit<FirstShape, 'id' | 'type'>` zamiast `{}`); kolejny kształt rozszerza ją operatorem `&`. Bez tego `ShapeUpdate = Partial<AllShapeGeometry & { type: ShapeType }>` redukuje się do `Partial<{ type: ShapeType }>` i wszystkie call-sites `commitShapeUpdate` / `updateShapeTransient` tracą bezpieczeństwo typów (literówki w nazwach pól typu `with` vs `width` przejdą bez błędu kompilacji). Hard-stopu w CI nie ma — pamiętać o tym ręcznie przy review pierwszego PR-a kształtu.
+
 ---
 
 ## 20. Znane ryzyka techniczne
@@ -1150,7 +1311,7 @@ Przykład: `profile-u`.
 
 - `pointer*` events wszędzie; `setPointerCapture` przy starcie dragu
 - Hit area: 20 px (touch) / 8 px (desktop)
-- `pixelRatio={window.devicePixelRatio}` ustawiane przez `CanvasShell` (impl-konva → na `<Stage>`)
+- `pixelRatio={devicePixelRatio()}` (wrapper SSR-safe z `@/canvas-kit/constants`) ustawiane przez `CanvasShell` (impl-konva → na `<Stage>`); patrz §22.9.4 — bezpośredni dostęp do `window.devicePixelRatio` poza `src/canvas-kit/` jest zabroniony
 - **Spike na fizycznym tablecie (iPad, Wacom) PRZED implementacją 8 kształtów** — empiryczna weryfikacja, czy Konva nie wymaga wymiany na PixiJS
 - Cała logika multi-touch żyje w `canvas-kit/pointerInput.ts` — niezależna od Konvy
 
@@ -1184,7 +1345,7 @@ Przykład: `profile-u`.
 
 ```
 ShapeType (closed union)
-  └─► SHAPE_REGISTRY[type] → ShapeDefinition<S>
+  └─► getShapeDefinition(type) → ShapeDefinition<S>   ← ZAWSZE przez getShapeDefinition, nigdy SHAPE_REGISTRY[type] bezpośrednio
         ├── create(pos)              → nowy S
         ├── Renderer                 → drzewo prymitywów @/canvas-kit (G/Rect/Line/Arc/Circle/Path/Text)
         ├── PropertiesPanel          → sidebar form
@@ -1228,7 +1389,8 @@ Canvas (przez @/canvas-kit; impl-konva aktywne, impl-pixi przygotowane)
   CanvasShell
     GroupLayer   : shapes + WeldUnit overlays   [z-index = kolejność shapes[]]
     OverlayLayer : handles, WeldUnitHandles, marquee, anchors   [zawsze na wierzchu]
-  pointerInput   : DOM PointerEvent → { pinch | pan | drag | tap }
+  pointerInput   : DOM PointerEvent → { pinch | drag | tap }
+                   pan = drag w trybie 'hand' — reklasyfikacja w CanvasApp.tsx
   rasterize      : eksport PNG/JPG (delegacja do silnika)
   Import konva/react-konva: WYŁĄCZNIE w canvas-kit/impl-* i components/canvas/
 
@@ -1270,19 +1432,33 @@ export { G, Rect, Line, Arc, Circle, Path, Text } from './impl-konva'
 // Wejście (znormalizowane gesty z Pointer Events API)
 export { usePointerInput } from './pointerInput'
 export type { PointerGesture } from './pointerInput'
-// PointerGesture = { kind: 'pinch'|'pan'|'drag'|'tap', ... }
+// PointerGesture = { kind: 'pinch'|'drag'|'tap', ... }
+// pan = drag reklasyfikowany w CanvasApp na podstawie toolMode === 'hand'
 
 // Eksport rastrowy
 export { rasterize } from './impl-konva'
-export type { RasterizeOptions } from './primitives'
 
-// Stałe
+// Stałe i helpery (w tym `devicePixelRatio` jako funkcja SSR-safe — wołać z nawiasami:
+// `devicePixelRatio()`. Bezpośredni dostęp do `window.devicePixelRatio` jest zabroniony
+// poza `src/canvas-kit/` przez §22.9.4.)
 export { HIT_AREA_TOUCH, HIT_AREA_DESKTOP, devicePixelRatio } from './constants'
+
+// Typy props prymitywów + geometria 2D — używane przez shape `Renderer`-y
+// do deklaracji type-safe komponentów; każdy renderer importuje wyłącznie z `@/canvas-kit`.
+// `Point` ma kanoniczne źródło tutaj (canvas-kit jest silnikiem 2D); `src/shapes/_base/types.ts`
+// re-eksportuje go z `@/canvas-kit` dla wygody (zgodnie z §22.7: kierunek zależności
+// geometria → domena, nie odwrotnie — żeby wymiana silnika nie wymagała ruchu typów).
+export type {
+  Point,
+  CommonShapeProps, GProps, RectProps, LineProps, ArcProps,
+  CircleProps, PathProps, TextProps,
+  RasterizeOptions, CanvasPointerHandler
+} from './primitives'
 ```
 
 ### 22.2 Typy props prymitywów
 
-Każdy prymityw przyjmuje **tylko** props, które mają 1:1 odpowiednik w Konva i Pixi. Brak Konva-specific properties (`shadowBlur`, `cache()`, `Konva.Animation`, …) na poziomie publicznym. Jeśli dany efekt jest niezbędny — wraz dodajemy do kontraktu i implementujemy w obu backendach.
+Każdy prymityw przyjmuje **tylko** props, które mają 1:1 odpowiednik w obu silnikach (Konva i Pixi) — bezpośrednio jako natywny atrybut, lub przez trywialne mapowanie. Brak na poziomie publicznym Konva-only properties (`shadowBlur`, `cache()`, `Konva.Animation`, …). Jeśli dany efekt jest niezbędny — dodajemy go do kontraktu i implementujemy w obu backendach.
 
 ```typescript
 // src/canvas-kit/primitives.ts
@@ -1293,6 +1469,9 @@ export interface CommonShapeProps {
   fill?: string
   stroke?: string
   strokeWidth?: number
+  hitStrokeWidth?: number    // hit-area expansion (touch-friendly handles)
+  visible?: boolean
+  listening?: boolean        // czy element łapie zdarzenia pointer
   // pointer events (DOM PointerEvent — wspólne dla obu silników)
   onPointerDown?:   (e: PointerEvent) => void
   onPointerMove?:   (e: PointerEvent) => void
@@ -1301,13 +1480,23 @@ export interface CommonShapeProps {
 }
 
 export interface RectProps   extends CommonShapeProps { width: number; height: number; cornerRadius?: number }
-export interface LineProps   extends CommonShapeProps { points: number[]; closed?: boolean }
+export interface LineProps   extends CommonShapeProps { points: number[]; closed?: boolean; dash?: number[]; lineCap?: 'butt'|'round'|'square'; lineJoin?: 'miter'|'round'|'bevel' }
 export interface ArcProps    extends CommonShapeProps { innerRadius: number; outerRadius: number; angle: number }
 export interface CircleProps extends CommonShapeProps { radius: number }
 export interface PathProps   extends CommonShapeProps { d: string }   // SVG path data
-export interface TextProps   extends CommonShapeProps { text: string; fontSize: number; align?: 'left'|'center'|'right' }
+export interface TextProps   extends CommonShapeProps { text: string; fontSize: number; fontFamily?: string; align?: 'left'|'center'|'right'; width?: number }
 export interface GProps      extends CommonShapeProps { children?: React.ReactNode }
 ```
+
+**Mapowanie cross-engine dla wybranych props (kontrakt zachowuje 1:1, implementacja translatuje):**
+
+| Prop | Konva | Pixi |
+|---|---|---|
+| `hitStrokeWidth` | `Shape.hitStrokeWidth` (natywne) | poszerzenie geometrii hit-area lub `hitArea` jako poligon offset |
+| `listening` | `Node.listening(boolean)` (natywne) | `eventMode: 'none' \| 'static'` (`false` ↔ `'none'`) |
+| `dash` / `lineCap` / `lineJoin` | natywne props `Konva.Line` | `Graphics.setStrokeStyle({ dash, cap, join })` |
+
+Wszystkie pozostałe props (`x`, `y`, `rotation`, `opacity`, `fill`, `stroke`, `strokeWidth`, `visible`, `cornerRadius`, `closed`, …) mapują się 1:1 bez translacji.
 
 ### 22.3 Granice importów (egzekwowane przez ESLint)
 
@@ -1349,11 +1538,12 @@ export interface GProps      extends CommonShapeProps { children?: React.ReactNo
 export type PointerGesture =
   | { kind: 'tap';   x: number; y: number; pointerId: number; pointerType: 'mouse'|'touch'|'pen' }
   | { kind: 'drag';  start: Point; current: Point; delta: Point; pointerId: number; phase: 'start'|'move'|'end' }
-  | { kind: 'pan';   delta: Point; pointerId: number; phase: 'start'|'move'|'end' }
   | { kind: 'pinch'; center: Point; scale: number; rotation: number; phase: 'start'|'move'|'end' }
 
-export function usePointerInput(target: RefObject<HTMLElement>, handler: (g: PointerGesture) => void): void
+export function usePointerInput(target: RefObject<HTMLElement | null>, handler: (g: PointerGesture) => void): void
 ```
+
+`canvas-kit` jest engine-agnostic i nie zna trybów aplikacji — **reklasyfikacja `drag` → pan dzieje się w `CanvasApp.tsx`** na podstawie `toolMode === 'hand'` lub braku trafienia w element. Stąd `kind: 'pan'` celowo nie istnieje w unii: domena gestów na granicy canvas-kit to `tap | drag | pinch`.
 
 Implementacja śledzi mapę `pointerId → PointerEvent`, na podstawie której emituje znormalizowane gesty. Zero zależności od Konva/Pixi — używa wyłącznie DOM API. Testowalna w jsdom z syntetycznymi `PointerEvent`.
 
@@ -1372,11 +1562,17 @@ export function rasterize(opts: RasterizeOptions): Promise<Blob>
 `impl-konva/rasterize.ts` deleguje do `stage.toDataURL()` + konwersja base64→Blob.
 `impl-pixi/rasterize.ts` (jeśli powstanie) deleguje do `app.renderer.extract.image()`.
 
+**Ograniczenie aktualnej implementacji (`impl-konva/activeStage.ts`):** referencja do bieżącego `Stage` trzymana jest w **module-level singleton** ustawianym przez `CanvasShell` przy mount/unmount. Konsekwencje, o których konsument musi wiedzieć:
+
+- W drzewie React może istnieć **co najwyżej jedna** `CanvasShell` na raz — kilka instancji (np. preview + main canvas obok siebie) wzajemnie nadpisałoby singleton, a `rasterize()` operowałby na ostatnio zamontowanym Stage'u.
+- W testach jednostkowych `exportEngine` trzeba albo wyrenderować pełny `CanvasShell` w jsdom, albo zamockować `getActiveStage`.
+- Pattern jest świadomie pragmatyczny dla MVP. Migracja na React context (`CanvasStageContext.Provider`) jest TODO przy pierwszej iteracji `exportEngine.ts`, jeśli pojawi się potrzeba multi-stage (np. miniatury PDF). Implementacja `impl-pixi/` może wybrać dowolne podejście — kontrakt `rasterize(opts)` go nie wiąże.
+
 ### 22.7 Co przeżywa wymianę silnika bez modyfikacji
 
 - Cały `src/store/`, `src/lib/`, `src/weld-units/` (bez `WeldUnitOverlay.tsx` — patrz §22.8)
 - Wszystkie typy w `src/shapes/_base/` i `src/shapes/[typ]/types.ts`
-- Wszystkie funkcje czyste: `captureGeometry`, `getBoundingBox`, `getWorldPoints`, `anchors`, `edges`, `snapEngine`, `weldAutosize`, `overlapDetector`, `documentCodec`, `bead-sequence`
+- Wszystkie funkcje czyste: `captureGeometry`, `getBoundingBox`, `getWorldPoints`, `anchors`, `edges`, `snapEngine`, `shapes/weld-joint/autosize`, `overlapDetector`, `documentCodec`, `bead-sequence`
 - `PropertiesPanel` każdego kształtu (czyste DOM/React)
 - Cały `src/app/`, `src/messages/`, `src/components/sidebar/`, `src/components/toolbar/`, `src/components/project-list/`
 

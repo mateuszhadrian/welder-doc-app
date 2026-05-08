@@ -7,7 +7,7 @@ WelderDoc to przeglądarkowa aplikacja SaaS przeznaczona dla inżynierów spawal
 Aplikacja działa w modelu subskrypcyjnym (Free/Pro) z opcją korzystania jako gość.
 
 **Stos technologiczny:**
-- **Frontend:** Next.js (App Router), React, TypeScript, Konva.js (via `react-konva`), Zustand + Immer (zarządzanie stanem), Tailwind CSS, Lucide React (ikony)
+- **Frontend:** Next.js (App Router), React, TypeScript, Konva.js (via `react-konva`; ukryta za `src/canvas-kit/` — patrz `architecture-base.md` §22), Zustand + Immer (zarządzanie stanem), Tailwind CSS, Lucide React (ikony)
 - **Testowanie:** Vitest (z `jsdom` jako environment + `vitest-canvas-mock` dla testów Konva), `@vitejs/plugin-react`, @testing-library/react, @testing-library/user-event, @testing-library/jest-dom (entry point `/vitest`), Playwright (`@playwright/test`)
 - **Backend:** Supabase (PostgreSQL, region EU — Frankfurt)
 - **Hosting:** Vercel
@@ -66,7 +66,7 @@ Konsekwencje: przygotowanie dokumentacji technicznej jest czasochłonne, podatne
 - Ograniczony obszar roboczy (bounded canvas) — domyślny rozmiar **2970 × 2100 px**, konfigurowalny przez użytkownika z poziomu ustawień projektu.
 - Viewport jest ograniczony do granic obszaru roboczego — pan i zoom nie mogą wyjść poza krawędzie canvasu.
 - Proporcjonalne renderowanie geometrii (nie schematyczne).
-- Silnik 2D: Konva.js implementowany przez `react-konva`.
+- Silnik 2D: Konva.js implementowany przez `react-konva`, hermetycznie ukryta za warstwą `@/canvas-kit` (architecture-base.md §22) — kod domeny (shape Rendererzy, eksport, pointer input) nie zna konkretnego silnika; wymiana na PixiJS sprowadza się do nowej impl `src/canvas-kit/impl-pixi/` bez refactoringu domeny.
 
 **Widok startowy po wczytaniu projektu:**
 Po otwarciu zapisanego projektu scena jest automatycznie wycentrowana na ekranie, a poziom zoomu jest dobierany tak, aby jak największa część zawartości projektu była widoczna. Jeżeli canvas jest znacznie większy niż zawartość projektu, zoom jest dostosowywany do rozmiaru ekranu użytkownika z marginesem (padding) nie przekraczającym 40 px.
@@ -187,7 +187,7 @@ Tryb sekwencji spawania umożliwia tworzenie **połączeń spawalniczych** — w
    - Każda warstwa zawiera równomiernie rozmieszczone ściegi; ich wstępna liczba zależy od szerokości warstwy.
    - Obok każdej warstwy widoczne są przyciski **[−]** (po lewej) i **[+]** (po prawej) umożliwiające usunięcie lub dodanie ściegu przy zachowaniu równomiernego rozmieszczenia.
    - Dostępna jest możliwość dodania lub usunięcia całej warstwy.
-   - Jednocześnie z pojawieniem się warstw wyświetlany jest panel boczny umożliwiający wybór kształtu pojedynczego ściegu — dostępne warianty to przede wszystkim trójkąt z zaokrąglonymi wierzchołkami oraz trapez z zaokrąglonymi wierzchołkami, a także inne dostępne kształty.
+   - Jednocześnie z pojawieniem się warstw wyświetlany jest panel boczny umożliwiający wybór kształtu pojedynczego ściegu. W MVP dostępne są dwa warianty: **trójkąt z zaokrąglonymi wierzchołkami** oraz **trapez z zaokrąglonymi wierzchołkami**. Dodatkowe kształty (np. okrągły, owalny) — post-MVP.
 
 6. **Zablokowane elementy jako jednostka** — po zablokowaniu połączenia spawalniczego powiązane elementy sceny nie mogą być przesuwane niezależnie. Przesunięcie jednego elementu powoduje przesunięcie całej jednostki (oba elementy + połączenie).
 
@@ -223,6 +223,7 @@ Tryb sekwencji spawania umożliwia tworzenie **połączeń spawalniczych** — w
 - Cookie consent banner.
 - Checkbox zgody przy rejestracji z zapisem wersji zgody.
 - Instancja Supabase w regionie EU (Frankfurt).
+- Trwałe usunięcie konta na żądanie użytkownika (RODO art. 17 — prawo do bycia zapomnianym); ponowna autoryzacja hasłem wymagana przed wykonaniem operacji; kaskadowe usunięcie danych: projekty, zgody, profil; dane bilingowe (subskrypcje) anonimizowane przez `SET NULL` (obowiązek audytu Paddle).
 
 ---
 
@@ -240,13 +241,13 @@ Tryb sekwencji spawania umożliwia tworzenie **połączeń spawalniczych** — w
 - Odbicie lustrzane (poziome i pionowe) oraz zarządzanie z-index z poziomu panelu.
 - Manipulacja: przesuwanie (z zachowaniem jednostki dla połączonych elementów), obrót (uchwyt narożny), zoom, pan, SNAP, multi-select z automatycznym grupowaniem.
 - Undo/Redo: 100 kroków, Command Pattern, historia w localStorage (architektonicznie gotowe na multi-user), skróty Ctrl/Cmd.
-- Pełny system tworzenia połączeń spawalniczych: predefiniowane kształty → modyfikacja uchwytami → zablokowanie połączenia z min. 2 elementami → konwersja na wielowarstwową sekwencję ściegów → zarządzanie ściegami i warstwami ([+]/[−]) → wybór kształtu ściegu (trójkąt, trapez z zaokrąglonymi wierzchołkami i inne).
+- Pełny system tworzenia połączeń spawalniczych: predefiniowane kształty → modyfikacja uchwytami → zablokowanie połączenia z min. 2 elementami → konwersja na wielowarstwową sekwencję ściegów → zarządzanie ściegami i warstwami ([+]/[−]) → wybór kształtu ściegu (MVP: trójkąt lub trapez z zaokrąglonymi wierzchołkami).
 - Eksport PNG i JPG (z watermarkiem dla Guest/Free, bez dla Pro).
 - Zarządzanie projektami: 1 projekt w chmurze dla Free, bez limitu dla Pro; lokalny autozapis dla wszystkich; migracja danych gościa do chmury po zalogowaniu.
 - System kont: Guest / Free / Pro z płatnościami przez Paddle.
 - Dark mode i Light mode.
 - Wielojęzyczność PL/EN.
-- GDPR minimum: Polityka Prywatności, Regulamin, cookie consent, checkbox zgody.
+- GDPR minimum: Polityka Prywatności, Regulamin, cookie consent, checkbox zgody, usuwanie konta (art. 17).
 - CI/CD: GitHub Actions z deploymentem na Vercel.
 
 ### Poza zakresem MVP
@@ -877,7 +878,7 @@ Opis: Jako użytkownik chcę wybrać kształt pojedynczego ściegu w sekwencji s
 Kryteria akceptacji:
 
 - Panel wyboru kształtu ściegu pojawia się automatycznie w momencie konwersji połączenia na sekwencję warstw.
-- Dostępne są co najmniej dwa podstawowe kształty ściegu: trójkąt z zaokrąglonymi wierzchołkami oraz trapez z zaokrąglonymi wierzchołkami, a także inne dostępne warianty.
+- W MVP dostępne są dokładnie dwa kształty ściegu: **trójkąt z zaokrąglonymi wierzchołkami** (`rounded-triangle`) oraz **trapez z zaokrąglonymi wierzchołkami** (`rounded-trapezoid`). Dodatkowe warianty są poza zakresem MVP.
 - Wybrany kształt jest natychmiast stosowany do wszystkich ściegów w sekwencji.
 - Można zmienić kształt ściegu po konwersji, wchodząc ponownie w tryb edycji połączenia.
 

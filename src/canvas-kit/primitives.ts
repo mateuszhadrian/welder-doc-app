@@ -12,6 +12,16 @@
 
 import type { ReactNode } from 'react';
 
+/**
+ * Geometryczny typ 2D — kanoniczne źródło: canvas-kit (silnik 2D).
+ * Domena `shapes/_base/types.ts` re-eksportuje go z `@/canvas-kit`, więc kierunek
+ * zależności jest geometria → domena (nie odwrotnie). Patrz architecture §22.7.
+ */
+export interface Point {
+  x: number;
+  y: number;
+}
+
 export type CanvasPointerHandler = (e: PointerEvent) => void;
 
 export interface CommonShapeProps {

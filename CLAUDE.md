@@ -6,6 +6,19 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 WelderDoc is a browser SaaS for drawing proportional cross-sections of welded joints and weld bead sequences. The repo is in **post-bootstrap, pre-implementation** state: scaffolding, configs, and `.ai/` design docs are in place, but most files under `src/` (shapes, store slices, components, libs) are empty placeholders. Use `.ai/architecture-base.md` as the authoritative implementation spec — it defines types, slices, state machines, and SNAP algorithms in full. PRD: `.ai/prd.md`. Tech stack matrix: `.ai/tech-stack.md`. UI strings are Polish; in-code identifiers and comments are mixed PL/EN.
 
+**Currently implemented in `src/lib/`:** `snapEngine.ts` (stub with pure-function signatures); `supabase/{client,server,middleware}.ts` (the three Supabase client variants per `tech-stack.md` §7); `ipAnonymize.ts` (RODO IPv4 `/24` + IPv6 `/48` — used by `/api/consent`, co-located unit test). Architecture §3 lists future helpers (`documentCodec.ts`, `captureGeometry.ts`, `shapeBounds.ts`, `exportEngine.ts`, `overlapDetector.ts`) — none implemented yet.
+
+All 6 Route Handlers exist (`api-plan.md` §2.1):
+
+- `src/app/api/health/route.ts`
+- `src/app/api/consent/route.ts` (uses RPC `record_consent_bundle`)
+- `src/app/api/user/export/route.ts`
+- `src/app/api/user/account/route.ts` (DELETE — RODO art. 17; re-auth + hard delete via `auth.admin.deleteUser`)
+- `src/app/api/paddle/webhook/route.ts` (HMAC verify, idempotent upsert, dispatch-before-marker)
+- `src/app/api/cron/{expire-subscriptions,cleanup-webhook-events}/route.ts`
+
+Four Supabase migrations are applied: `20260507000000_complete_schema.sql`, `20260508000000_record_consent_bundle.sql`, `20260509000000_paddle_webhook_hardening.sql`, `20260510000000_fix_consent_version_comment.sql` (reissues `COMMENT ON COLUMN user_profiles.current_consent_version` so `pg_description` reflects the actual write source — `/api/consent` route handler on a session client + RPC `record_consent_bundle()` running as `postgres`, not `service_role`). Domain layer (shapes, weld-units, store slices, canvas components) is not yet implemented.
+
 ## Commands
 
 Node `22.x` + pnpm `9.x` are required (`engines` enforces this). Use `nvm use` then `pnpm install`.
@@ -24,6 +37,9 @@ pnpm test:e2e -- --project=chromium-desktop          # only the mandatory CI pro
 pnpm test:e2e -- --update-snapshots                  # accept new visual baselines
 pnpm supabase start           # local Postgres + Auth + Studio (requires Docker)
 pnpm supabase db reset        # destructive: re-apply migrations from supabase/migrations/
+pnpm supabase:types           # regenerate types from REMOTE Supabase (needs SUPABASE_PROJECT_ID in .env.local)
+pnpm supabase:types:local     # regenerate types from LOCAL stack (run after `supabase db reset`)
+pnpm verify:routes            # check vercel.json crons[].path + Paddle/consent/export handlers exist
 ```
 
 Run a single Vitest test: `pnpm test:run path/to/file.test.ts -t "test name"`.
@@ -52,11 +68,11 @@ These are non-obvious rules from `.ai/architecture-base.md` that infrastructure 
 ## Project-specific configuration quirks
 
 - **Konva needs the `canvas` alias** to `./empty.js` in `next.config.ts` (already wired). This is impl-konva-specific; it gets removed when `impl-pixi/` ships. All `react-konva` users live inside `src/canvas-kit/impl-konva/` (and must be `'use client'`); the canvas root in `src/components/canvas/` is loaded with `next/dynamic({ ssr: false })`.
-- **Middleware file is `src/proxy.ts`, not `middleware.ts`** (Next 16 convention used here). It exports `proxy` and `config`; chains `next-intl` middleware and is the place to add Supabase `updateSession()` (currently stubbed).
+- **Middleware file is `src/proxy.ts`, not `middleware.ts`** (Next 16 convention used here). It exports `proxy` and `config`; chains Supabase `updateSession()` (`src/lib/supabase/middleware.ts`) → `next-intl` middleware. The chain is mandatory: Supabase must refresh the JWT cookies before next-intl decides on locale rewrite/redirect, and any locale-rewrite response must propagate the `Set-Cookie` headers from the Supabase response. The matcher excludes `/api/*` (Route Handlers refresh sessions on first `auth.getUser()` call inside the handler).
 - **i18n routing uses `localePrefix: 'as-needed'` with `localeDetection: false`** and a `[locale]` segment in `src/app/[locale]/`. Default locale is `pl`. Every `page.tsx`/`layout.tsx` must call `setRequestLocale(locale)` before any `next-intl` hook, and `generateStaticParams()` must return both locales.
 - **Zero hardcoded UI strings.** All copy lives in `src/messages/{pl,en}.json` and is read via `useTranslations(...)`.
 - **Coverage thresholds are enforced** for `src/lib/**`, `src/shapes/**`, `src/weld-units/**`, `src/store/**`: lines 80, functions 80, branches 70, statements 80 (`vitest.config.ts`). UI components are intentionally excluded — they are covered by Playwright + visual regression instead.
-- **Vitest uses `jsdom` + `vitest-canvas-mock`** (registered in `vitest.setup.ts`); `tsconfig.json` includes `vitest/jsdom` types.
+- **Vitest uses `jsdom` + `vitest-canvas-mock`** (registered in `vitest.setup.ts`). `tsconfig.json` deliberately omits `compilerOptions.types` to keep `@types/node`/`@types/react` auto-loaded; vitest globals come from `globals: true` in `vitest.config.ts`.
 - **Playwright `chromium-desktop` is the only mandatory CI project**; `chromium-mobile`, `firefox-desktop`, `webkit-desktop` are informational. Visual-regression PNGs are committed — if you intentionally change canvas output, run with `--update-snapshots` and commit the new baselines.
 - **Vercel region is pinned to `fra1`** (`vercel.json`) to colocate with the Supabase EU-Frankfurt instance required by GDPR.
 - **TypeScript runs with `strict` + `noUncheckedIndexedAccess`.** Array/record indexing returns `T | undefined`; handle it.
@@ -68,7 +84,14 @@ These are non-obvious rules from `.ai/architecture-base.md` that infrastructure 
 - Commit-msg (`.husky/commit-msg` → commitlint): Conventional Commits required. Allowed types: `feat`, `fix`, `chore`, `docs`, `refactor`, `test`, `style`, `perf`, `build`, `ci`. Optional scope, e.g. `feat(canvas): pinch-to-zoom`.
 - Branch off `main`; PRs must pass lint, typecheck, Vitest, and Playwright `chromium-desktop`.
 - PR review checklist for canvas-touching changes: (1) no new file outside `src/canvas-kit/impl-*` and `src/components/canvas/` imports `konva` / `react-konva`; (2) every shape `Renderer` uses **only** primitives from `@/canvas-kit`; (3) any new touch/pen gesture is added to `src/canvas-kit/pointerInput.ts`, not to the component; (4) `exportEngine` calls `rasterize()` from `@/canvas-kit`, never `stage.toDataURL` directly. A failure here means a future engine swap stops being a local change.
+- PR checklist for Route Handlers (pre-merge to `main`):
+  - **Cron:** if `vercel.json crons[]` is non-empty, every path must have a matching `src/app/api/<path>/route.ts` exporting `GET` (not POST — Vercel Cron sends GET by default) with `Authorization: Bearer ${CRON_SECRET}` header verification.
+  - **Paddle webhook:** if the app uses Paddle Checkout (`@paddle/paddle-js`), `src/app/api/paddle/webhook/route.ts` must exist, export `POST`, and verify `paddle-signature` via `PADDLE_WEBHOOK_SECRET` before processing. Without it, `subscription.activated` events drop and US-045 upgrade silently fails.
+  - **Consent:** if the registration form is wired up, `src/app/api/consent/route.ts` must exist, export `POST`, accept the bundle payload (`types[]`) per `api-plan.md` §2.1, and anonymise the IP via `src/lib/ipAnonymize.ts` before any INSERT to `consent_log`.
+  - **User export (RODO art. 20):** `src/app/api/user/export/route.ts` must exist before any production deploy that touches `documents`/`consent_log`. Required for compliance, not just feature parity.
+- PR checklist for auth implementation (US-002 sign-in):
+  - **Locale redirect after sign-in.** Per `architecture-base.md` §17, after `setRequestLocale(locale)` the root `[locale]/layout.tsx` (or a dedicated `LocaleGuard`) must call `auth.getUser()`, fetch `user_profiles.locale`, and `redirect()` to `/<user.locale>/...` when `pathname locale ≠ user.locale`. Without this guard, signing in on a device with a different URL prefix leaves the user on the wrong locale until manual switch (cross-device UX desync).
 
 ## What is intentionally deferred
 
-Per `.ai/init-project-setup-analysis.md` §4: cloud Vercel/Supabase/Paddle hookup, production domain, branding (palette, fonts, logo, favicon), Sentry, LICENSE, branch protection, Lighthouse CI, and `experimental.reactCompiler`. Don't add these without a corresponding task — they are tracked.
+Per `.ai/init-project-setup-analysis.md` §4: cloud Vercel/Supabase/Paddle hookup, production domain, branding (palette, brand-specific fonts beyond the current `Inter` placeholder loaded via `next/font/google` in `src/app/[locale]/layout.tsx`, logo, favicon), Sentry, LICENSE, branch protection, Lighthouse CI, and `experimental.reactCompiler`. Don't add these without a corresponding task — they are tracked.

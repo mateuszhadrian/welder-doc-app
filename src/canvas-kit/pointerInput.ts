@@ -12,17 +12,16 @@
  *   nie wymuszamy `useCallback`.
  * - `setPointerCapture` jest wołany na elemencie target dla każdego pointera.
  * - Tap = pointer up w ≤ 250 ms i ≤ 5 px od pointer down.
- * - `pan` z kontraktu typów emitujemy NA TYM SAMYM payloadzie co `drag`;
- *   reklasyfikacja drag → pan należy do warstwy nad canvas-kit (mode: 'hand'
- *   vs `mode: 'select'` + brak hit testu na elemencie).
+ * - Reklasyfikacja drag → pan należy do warstwy nad canvas-kit (`CanvasApp.tsx`
+ *   na podstawie `toolMode === 'hand'` lub braku hit-testu na elemencie).
+ *   `canvas-kit` jest engine-agnostic i nie zna trybów aplikacji.
  */
 
 import { useEffect, useRef, type RefObject } from 'react';
 
-export interface Point {
-  x: number;
-  y: number;
-}
+// Point — kanoniczne źródło w canvas-kit/primitives.ts (geometria 2D należy do silnika).
+// Konsumenci `PointerGesture` importują `Point` z `@/canvas-kit` (barrel zwraca oba typy).
+import type { Point } from './primitives';
 
 export type PointerGesture =
   | {
@@ -36,12 +35,6 @@ export type PointerGesture =
       kind: 'drag';
       start: Point;
       current: Point;
-      delta: Point;
-      pointerId: number;
-      phase: 'start' | 'move' | 'end';
-    }
-  | {
-      kind: 'pan';
       delta: Point;
       pointerId: number;
       phase: 'start' | 'move' | 'end';

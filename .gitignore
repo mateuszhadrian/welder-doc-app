@@ -46,6 +46,10 @@ pnpm-debug.log*
 supabase/.branches
 supabase/.temp
 supabase/.env
+# Studio snippets are ephemeral per-session artifacts. Persistent SQL belongs
+# in supabase/migrations/ (schema) or supabase/seed.sql (dev fixtures).
+# See .ai/code-documentation-problems-v8.md §1.1.
+supabase/snippets/
 
 # playwright
 test-results

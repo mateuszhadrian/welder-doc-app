@@ -5,10 +5,11 @@
 
 import type { ShapeType } from '../index';
 
-export interface Point {
-  x: number;
-  y: number;
-}
+// Point pochodzi z canvas-kit (silnik 2D — kanoniczne źródło dla geometrii 2D).
+// Re-eksport tutaj dla wygody: shape moduły konsumują geometrię i typy domeny
+// z jednego pliku.
+export type { Point } from '@/canvas-kit';
+import type { Point } from '@/canvas-kit';
 
 export interface BaseShape {
   id: string;

@@ -5,7 +5,7 @@
  */
 
 /** Hit-area expansion (px) dla uchwytów na urządzeniach dotykowych. */
-export const HIT_AREA_TOUCH = 16;
+export const HIT_AREA_TOUCH = 20;
 
 /** Hit-area expansion (px) dla uchwytów na desktopie (mouse + pen). */
 export const HIT_AREA_DESKTOP = 8;
