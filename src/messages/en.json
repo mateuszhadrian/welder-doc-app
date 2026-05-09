@@ -3,5 +3,56 @@
     "title": "WelderDoc",
     "tagline": "Welded joint documentation",
     "placeholder": "Application bootstrap in progress — foundation ready."
+  },
+  "auth": {
+    "login": {
+      "title": "Sign in",
+      "subtitle": "Enter your email and password to continue.",
+      "email_label": "Email",
+      "email_placeholder": "you@example.com",
+      "password_label": "Password",
+      "password_placeholder": "Your password",
+      "submit": "Sign in",
+      "submitting": "Signing in…",
+      "forgot_password_link": "Forgot your password?",
+      "register_link": "Don't have an account? Sign up",
+      "resend_verification": "Resend verification link",
+      "resend_verification_sent": "We sent a new link to your email."
+    }
+  },
+  "errors": {
+    "invalid_credentials": "Invalid email or password.",
+    "email_not_confirmed": "Please confirm your email address before signing in.",
+    "email_already_registered": "This email is already registered.",
+    "password_too_weak": "Password is too weak.",
+    "rate_limited": "Too many attempts. Please try again in a moment.",
+    "unauthorized": "Your session has expired. Please sign in again.",
+    "network_error": "Connection problem. Check your internet and try again.",
+    "unknown": "Something went wrong. Please try again.",
+    "invalid_email_format": "Invalid email format.",
+    "password_required": "Please enter your password.",
+    "guest_migration_failed": "We couldn't migrate your guest project.",
+    "guest_migration_limit": "You've reached the Free plan project limit — your guest project stayed in the browser.",
+    "project_limit_exceeded": "You've reached the Free plan project limit.",
+    "document_payload_too_large": "The project is too large to save.",
+    "document_name_invalid": "Project name is invalid.",
+    "document_data_shape_invalid": "Project data has an invalid format.",
+    "consent_type_invalid": "Invalid consent type.",
+    "consent_version_missing": "Consent version is missing.",
+    "consent_target_unauthorized": "You are not authorized to record this consent.",
+    "profile_locale_invalid": "Invalid profile language."
+  },
+  "toasts": {
+    "guest_migrated": "Your guest project has been migrated to the cloud.",
+    "guest_migration_limit": "Your guest project was not migrated — Free plan limit.",
+    "guest_migration_failed": "We couldn't migrate your guest project."
+  },
+  "documents": {
+    "untitled_default": "My first project"
+  },
+  "consent": {
+    "required_title": "Consent required",
+    "required_subtitle": "To continue, please accept the updated Terms of Service and Privacy Policy.",
+    "stub_notice": "The full consent form will be wired up in a follow-up task (POST /api/consent)."
   }
 }

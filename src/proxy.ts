@@ -18,6 +18,13 @@ const intlMiddleware = createIntlMiddleware(routing);
 // `createServerClient` z `@supabase/ssr` (handler `cookies.setAll` zapisuje
 // odświeżone tokeny do `Response`). Architektura §16.
 export async function proxy(request: NextRequest) {
+  // Expose the original pathname to Server Components (read via `headers()`).
+  // `[locale]/layout.tsx` uses it to skip the auth/consent guard on public
+  // routes (`/login`, `/register`, `/consent-required`, `/auth/callback`).
+  // `NextResponse.next({ request })` inside `updateSession` propagates the
+  // mutated request headers downstream.
+  request.headers.set('x-pathname', request.nextUrl.pathname);
+
   const { supabaseResponse } = await updateSession(request);
 
   const intlResponse = intlMiddleware(request);

@@ -3,5 +3,56 @@
     "title": "WelderDoc",
     "tagline": "Dokumentacja złączy spawalniczych",
     "placeholder": "Aplikacja w trakcie bootstrapu — fundament gotowy."
+  },
+  "auth": {
+    "login": {
+      "title": "Zaloguj się",
+      "subtitle": "Wpisz email i hasło, aby kontynuować pracę.",
+      "email_label": "Email",
+      "email_placeholder": "twoj@email.pl",
+      "password_label": "Hasło",
+      "password_placeholder": "Twoje hasło",
+      "submit": "Zaloguj się",
+      "submitting": "Logowanie…",
+      "forgot_password_link": "Nie pamiętasz hasła?",
+      "register_link": "Nie masz konta? Załóż",
+      "resend_verification": "Wyślij ponownie link weryfikacyjny",
+      "resend_verification_sent": "Wysłaliśmy nowy link na Twój email."
+    }
+  },
+  "errors": {
+    "invalid_credentials": "Nieprawidłowy email lub hasło.",
+    "email_not_confirmed": "Potwierdź swój adres email, aby się zalogować.",
+    "email_already_registered": "Ten email jest już zarejestrowany.",
+    "password_too_weak": "Hasło jest za słabe.",
+    "rate_limited": "Zbyt wiele prób. Spróbuj ponownie za chwilę.",
+    "unauthorized": "Sesja wygasła. Zaloguj się ponownie.",
+    "network_error": "Problem z połączeniem. Sprawdź internet i spróbuj ponownie.",
+    "unknown": "Coś poszło nie tak. Spróbuj ponownie.",
+    "invalid_email_format": "Nieprawidłowy format adresu email.",
+    "password_required": "Wpisz hasło.",
+    "guest_migration_failed": "Nie udało się przenieść Twojego projektu z trybu gościa.",
+    "guest_migration_limit": "Osiągnąłeś limit projektów na planie Free — projekt gościa pozostał w przeglądarce.",
+    "project_limit_exceeded": "Osiągnąłeś limit projektów na planie Free.",
+    "document_payload_too_large": "Projekt jest zbyt duży, aby zapisać.",
+    "document_name_invalid": "Nazwa projektu jest nieprawidłowa.",
+    "document_data_shape_invalid": "Dane projektu mają nieprawidłowy format.",
+    "consent_type_invalid": "Nieprawidłowy typ zgody.",
+    "consent_version_missing": "Brak wersji regulaminu.",
+    "consent_target_unauthorized": "Brak uprawnień do zapisu zgody.",
+    "profile_locale_invalid": "Nieprawidłowy język profilu."
+  },
+  "toasts": {
+    "guest_migrated": "Twój projekt z trybu gościa został przeniesiony do chmury.",
+    "guest_migration_limit": "Projekt gościa nie został przeniesiony — limit Free.",
+    "guest_migration_failed": "Nie udało się przenieść projektu z trybu gościa."
+  },
+  "documents": {
+    "untitled_default": "Mój pierwszy projekt"
+  },
+  "consent": {
+    "required_title": "Wymagana zgoda",
+    "required_subtitle": "Aby kontynuować, zaakceptuj zaktualizowany Regulamin i Politykę Prywatności.",
+    "stub_notice": "Pełny formularz zgód zostanie podłączony w kolejnym zadaniu (POST /api/consent)."
   }
 }
