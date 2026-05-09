@@ -5,9 +5,10 @@ import { Inter } from 'next/font/google';
 import { hasLocale, NextIntlClientProvider } from 'next-intl';
 import { getMessages, setRequestLocale } from 'next-intl/server';
 import { Toaster } from 'sonner';
-import { routing } from '@/i18n/routing';
+import { routing, type Locale } from '@/i18n/routing';
 import { createClient } from '@/lib/supabase/server';
 import { CURRENT_TOS_VERSION } from '@/lib/consent/version';
+import { LocaleSwitcher } from '@/components/locale-switcher/LocaleSwitcher';
 import '../globals.css';
 
 const inter = Inter({
@@ -25,7 +26,14 @@ export function generateStaticParams() {
   return routing.locales.map((locale) => ({ locale }));
 }
 
-const PUBLIC_SEGMENTS = ['/login', '/register', '/consent-required', '/auth/callback'];
+const PUBLIC_SEGMENTS = [
+  '/login',
+  '/auth/sign-up',
+  '/auth/check-email',
+  '/auth/callback',
+  '/consent-required',
+  '/account-deleted'
+];
 const LOCALE_PREFIX_RE = new RegExp(`^/(${routing.locales.join('|')})(?=/|$)`);
 
 function stripLocale(pathname: string): string {
@@ -60,29 +68,32 @@ export default async function LocaleLayout({
   const pathname = headerList.get('x-pathname') ?? '/';
   const segment = stripLocale(pathname);
 
-  if (!isPublicSegment(segment)) {
-    const supabase = await createClient();
-    const {
-      data: { user }
-    } = await supabase.auth.getUser();
+  // Always resolve the user so the LocaleSwitcher can persist preference for
+  // authenticated users on every page (incl. /login post-mount race), AND we
+  // can gate the LocaleGuard / consent-version checks on the same fetch.
+  // `getUser()` is a no-op in @supabase/ssr when no session cookie exists,
+  // so this adds zero cost on guest visits.
+  const supabase = await createClient();
+  const {
+    data: { user }
+  } = await supabase.auth.getUser();
 
-    if (user) {
-      const { data: profile } = await supabase
-        .from('user_profiles')
-        .select('locale, current_consent_version')
-        .eq('id', user.id)
-        .single<{ locale: string; current_consent_version: string | null }>();
+  if (user && !isPublicSegment(segment)) {
+    const { data: profile } = await supabase
+      .from('user_profiles')
+      .select('locale, current_consent_version')
+      .eq('id', user.id)
+      .single<{ locale: string; current_consent_version: string | null }>();
 
-      if (profile) {
-        if (profile.locale !== locale) {
-          redirect(buildLocalePath(profile.locale, segment));
-        }
-        if (
-          !profile.current_consent_version ||
-          profile.current_consent_version < CURRENT_TOS_VERSION
-        ) {
-          redirect(buildLocalePath(locale, '/consent-required'));
-        }
+    if (profile) {
+      if (profile.locale !== locale) {
+        redirect(buildLocalePath(profile.locale, segment));
+      }
+      if (
+        !profile.current_consent_version ||
+        profile.current_consent_version < CURRENT_TOS_VERSION
+      ) {
+        redirect(buildLocalePath(locale, '/consent-required'));
       }
     }
   }
@@ -93,6 +104,10 @@ export default async function LocaleLayout({
     <html lang={locale} className={inter.variable}>
       <body>
         <NextIntlClientProvider messages={messages}>
+          <header className="flex h-12 items-center justify-between border-b border-neutral-200 bg-white px-4">
+            <span className="text-sm font-semibold text-neutral-900">WelderDoc</span>
+            <LocaleSwitcher currentLocale={locale as Locale} userId={user?.id} />
+          </header>
           {children}
           <Toaster position="top-right" richColors closeButton />
         </NextIntlClientProvider>

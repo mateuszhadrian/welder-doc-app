@@ -20,7 +20,8 @@ const intlMiddleware = createIntlMiddleware(routing);
 export async function proxy(request: NextRequest) {
   // Expose the original pathname to Server Components (read via `headers()`).
   // `[locale]/layout.tsx` uses it to skip the auth/consent guard on public
-  // routes (`/login`, `/register`, `/consent-required`, `/auth/callback`).
+  // routes (`/login`, `/auth/sign-up`, `/auth/check-email`, `/auth/callback`,
+  // `/consent-required`).
   // `NextResponse.next({ request })` inside `updateSession` propagates the
   // mutated request headers downstream.
   request.headers.set('x-pathname', request.nextUrl.pathname);

@@ -48,9 +48,11 @@ if (usesPaddle && !fs.existsSync("./src/app/api/paddle/webhook/route.ts")) {
 }
 ' || errors=$((errors + 1))
 
-# 3. Consent + user/export — wymagane pre-deploy do prod (RODO art. 7 + art. 20).
+# 3. Consent + user/export + user/account — wymagane pre-deploy do prod
+#    (RODO art. 7 + art. 17 + art. 20).
 check_file "src/app/api/consent/route.ts" "RODO art. 7 (consent log)"
 check_file "src/app/api/user/export/route.ts" "RODO art. 20 (data portability)"
+check_file "src/app/api/user/account/route.ts" "RODO art. 17 (right to be forgotten)"
 
 # 4. Health endpoint — wymagany dla monitoringu / deploy checks.
 check_file "src/app/api/health/route.ts" "monitoring / Vercel deploy check"

@@ -15,9 +15,42 @@
       "submit": "Sign in",
       "submitting": "Signing in…",
       "forgot_password_link": "Forgot your password?",
-      "register_link": "Don't have an account? Sign up",
       "resend_verification": "Resend verification link",
       "resend_verification_sent": "We sent a new link to your email."
+    },
+    "signUp": {
+      "title": "Create your account",
+      "subtitle": "Sign up to save your projects in the cloud.",
+      "email_label": "Email",
+      "email_placeholder": "you@example.com",
+      "password_label": "Password",
+      "password_placeholder": "At least 8 characters",
+      "password_hint": "Minimum 8 characters.",
+      "consent_legend": "Required consents",
+      "consent_tos_label": "I accept the Terms of Service",
+      "consent_pp_label": "I accept the Privacy Policy",
+      "consent_cookies_label": "I accept the cookies policy",
+      "submit": "Create account",
+      "submitting": "Creating account…",
+      "sign_in_prompt": "Already have an account?",
+      "sign_in_link": "Sign in",
+      "already_registered_cta": "Sign in"
+    },
+    "checkEmail": {
+      "title": "Check your inbox",
+      "subtitle_with_email": "We've sent an activation link to {email}. Click the link to finish signing up.",
+      "subtitle_generic": "We've sent an activation link to your email. Click the link to finish signing up.",
+      "spam_hint": "Don't see it? Check your spam folder.",
+      "resend": "Resend link",
+      "resend_countdown": "Resend ({seconds}s)",
+      "resend_sent": "We sent a new link to your email.",
+      "back_to_login": "Back to sign in"
+    },
+    "callback": {
+      "processing": "Finishing your account setup…",
+      "error_title": "We couldn't complete your sign-up",
+      "error_subtitle": "The link may have expired or already been used. Try signing in, or request a new verification link.",
+      "back_to_login": "Back to sign in"
     }
   },
   "errors": {
@@ -40,7 +73,15 @@
     "consent_type_invalid": "Invalid consent type.",
     "consent_version_missing": "Consent version is missing.",
     "consent_target_unauthorized": "You are not authorized to record this consent.",
-    "profile_locale_invalid": "Invalid profile language."
+    "profile_locale_invalid": "Invalid profile language.",
+    "invalid_password": "Incorrect password.",
+    "invalid_confirmation": "Type DELETE exactly to confirm.",
+    "missing_fields": "Please fill in all required fields.",
+    "invalid_payload": "Invalid request payload.",
+    "internal_error": "Server error. Please try again in a moment.",
+    "consent_failed": "We couldn't save your consent. Please try again.",
+    "consent_required": "Please accept all required consents to create an account.",
+    "password_too_short": "Password must be at least 8 characters."
   },
   "toasts": {
     "guest_migrated": "Your guest project has been migrated to the cloud.",
@@ -54,5 +95,28 @@
     "required_title": "Consent required",
     "required_subtitle": "To continue, please accept the updated Terms of Service and Privacy Policy.",
     "stub_notice": "The full consent form will be wired up in a follow-up task (POST /api/consent)."
+  },
+  "account": {
+    "delete": {
+      "title": "Delete account",
+      "subtitle": "This action cannot be undone. All your projects and personal data will be permanently deleted under GDPR art. 17.",
+      "email_label": "Email",
+      "password_label": "Password",
+      "password_placeholder": "Your current password",
+      "confirmation_label": "Type DELETE to confirm",
+      "confirmation_placeholder": "DELETE",
+      "submit": "Delete account forever",
+      "submitting": "Deleting account…"
+    }
+  },
+  "account_deleted": {
+    "title": "Account deleted",
+    "subtitle": "All your personal data has been permanently erased. Thanks for using WelderDoc.",
+    "back_home": "Back to home"
+  },
+  "localeSwitcher": {
+    "label": "Interface language",
+    "locale_pl": "PL",
+    "locale_en": "EN"
   }
 }

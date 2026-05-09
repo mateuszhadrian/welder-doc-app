@@ -93,6 +93,26 @@ insert into auth.users (
   '{}'::jsonb
 ) on conflict (id) do nothing;
 
+-- E2E #5: target dla DELETE /api/user/account (RODO art. 17). Konsumowany
+-- przez test — spec sam rekreuje go w beforeEach przez psql, bo każde
+-- przebicie scenariusza "good password" wymiata usera z auth.users.
+insert into auth.users (
+  instance_id, id, aud, role, email, encrypted_password,
+  email_confirmed_at, created_at, updated_at,
+  confirmation_token, recovery_token, email_change_token_new, email_change,
+  raw_app_meta_data, raw_user_meta_data
+) values (
+  '00000000-0000-0000-0000-000000000000',
+  '55555555-5555-5555-5555-555555555555',
+  'authenticated', 'authenticated',
+  'e2e-delete-target@test.local',
+  crypt('Test123456!', gen_salt('bf')),
+  now(), now(), now(),
+  '', '', '', '',
+  '{"provider":"email","providers":["email"]}'::jsonb,
+  '{}'::jsonb
+) on conflict (id) do nothing;
+
 -- =============================================================================
 -- Profile state — handle_new_user trigger już utworzył wpisy w user_profiles.
 -- Aktualizujemy je tutaj jako rola `postgres` (seed run jako superuser),
@@ -114,3 +134,7 @@ where id = '33333333-3333-3333-3333-333333333333';
 update public.user_profiles
 set locale = 'pl', current_consent_version = '2026-05-01'
 where id = '44444444-4444-4444-4444-444444444444';
+
+update public.user_profiles
+set locale = 'pl', current_consent_version = '2026-05-01'
+where id = '55555555-5555-5555-5555-555555555555';

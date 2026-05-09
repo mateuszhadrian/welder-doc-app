@@ -15,9 +15,42 @@
       "submit": "Zaloguj się",
       "submitting": "Logowanie…",
       "forgot_password_link": "Nie pamiętasz hasła?",
-      "register_link": "Nie masz konta? Załóż",
       "resend_verification": "Wyślij ponownie link weryfikacyjny",
       "resend_verification_sent": "Wysłaliśmy nowy link na Twój email."
+    },
+    "signUp": {
+      "title": "Załóż konto",
+      "subtitle": "Utwórz konto, aby zapisywać projekty w chmurze.",
+      "email_label": "Email",
+      "email_placeholder": "twoj@email.pl",
+      "password_label": "Hasło",
+      "password_placeholder": "Minimum 8 znaków",
+      "password_hint": "Minimum 8 znaków.",
+      "consent_legend": "Wymagane zgody",
+      "consent_tos_label": "Akceptuję Regulamin",
+      "consent_pp_label": "Akceptuję Politykę Prywatności",
+      "consent_cookies_label": "Akceptuję politykę cookies",
+      "submit": "Załóż konto",
+      "submitting": "Tworzenie konta…",
+      "sign_in_prompt": "Masz już konto?",
+      "sign_in_link": "Zaloguj się",
+      "already_registered_cta": "Zaloguj się"
+    },
+    "checkEmail": {
+      "title": "Sprawdź swoją skrzynkę",
+      "subtitle_with_email": "Wysłaliśmy link aktywacyjny na adres {email}. Kliknij w link, aby dokończyć rejestrację.",
+      "subtitle_generic": "Wysłaliśmy link aktywacyjny na Twój adres email. Kliknij w link, aby dokończyć rejestrację.",
+      "spam_hint": "Nie widzisz wiadomości? Sprawdź folder Spam.",
+      "resend": "Wyślij link ponownie",
+      "resend_countdown": "Wyślij ponownie ({seconds}s)",
+      "resend_sent": "Wysłaliśmy nowy link na Twój email.",
+      "back_to_login": "Wróć do logowania"
+    },
+    "callback": {
+      "processing": "Kończymy konfigurację Twojego konta…",
+      "error_title": "Nie udało się dokończyć rejestracji",
+      "error_subtitle": "Link mógł wygasnąć lub zostać już użyty. Spróbuj zalogować się lub wyślij link ponownie.",
+      "back_to_login": "Wróć do logowania"
     }
   },
   "errors": {
@@ -40,7 +73,15 @@
     "consent_type_invalid": "Nieprawidłowy typ zgody.",
     "consent_version_missing": "Brak wersji regulaminu.",
     "consent_target_unauthorized": "Brak uprawnień do zapisu zgody.",
-    "profile_locale_invalid": "Nieprawidłowy język profilu."
+    "profile_locale_invalid": "Nieprawidłowy język profilu.",
+    "invalid_password": "Nieprawidłowe hasło.",
+    "invalid_confirmation": "Wpisz dokładnie DELETE, aby potwierdzić.",
+    "missing_fields": "Uzupełnij wszystkie wymagane pola.",
+    "invalid_payload": "Nieprawidłowe dane żądania.",
+    "internal_error": "Błąd serwera. Spróbuj ponownie za chwilę.",
+    "consent_failed": "Nie udało się zapisać zgody. Spróbuj ponownie.",
+    "consent_required": "Aby założyć konto, zaakceptuj wszystkie wymagane zgody.",
+    "password_too_short": "Hasło musi mieć minimum 8 znaków."
   },
   "toasts": {
     "guest_migrated": "Twój projekt z trybu gościa został przeniesiony do chmury.",
@@ -54,5 +95,28 @@
     "required_title": "Wymagana zgoda",
     "required_subtitle": "Aby kontynuować, zaakceptuj zaktualizowany Regulamin i Politykę Prywatności.",
     "stub_notice": "Pełny formularz zgód zostanie podłączony w kolejnym zadaniu (POST /api/consent)."
+  },
+  "account": {
+    "delete": {
+      "title": "Usuń konto",
+      "subtitle": "Tej operacji nie można cofnąć. Wszystkie Twoje projekty i dane osobowe zostaną trwale usunięte zgodnie z RODO art. 17.",
+      "email_label": "Email",
+      "password_label": "Hasło",
+      "password_placeholder": "Twoje aktualne hasło",
+      "confirmation_label": "Wpisz DELETE, aby potwierdzić",
+      "confirmation_placeholder": "DELETE",
+      "submit": "Usuń konto na zawsze",
+      "submitting": "Usuwanie konta…"
+    }
+  },
+  "account_deleted": {
+    "title": "Konto zostało usunięte",
+    "subtitle": "Wszystkie Twoje dane osobowe zostały trwale usunięte. Dziękujemy za korzystanie z WelderDoc.",
+    "back_home": "Wróć na stronę główną"
+  },
+  "localeSwitcher": {
+    "label": "Język interfejsu",
+    "locale_pl": "PL",
+    "locale_en": "EN"
   }
 }
