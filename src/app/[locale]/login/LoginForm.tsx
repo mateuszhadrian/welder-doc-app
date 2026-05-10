@@ -52,6 +52,11 @@ export function LoginForm({ locale }: Props) {
     }
   })();
 
+  // Surface the callback failure (link expired / invalid `code` / provider
+  // error) when the user is bounced back here from /auth/callback.
+  const callbackErrorBanner =
+    searchParams.get('callback_error') === '1' ? tErrors('callback_failed') : null;
+
   const showResend =
     error?.kind === 'server' && error.mapped.business === BusinessError.EMAIL_NOT_CONFIRMED;
 
@@ -181,6 +186,16 @@ export function LoginForm({ locale }: Props) {
       >
         {t('forgot_password_link')}
       </Link>
+
+      {callbackErrorBanner && !errorMessage ? (
+        <div
+          role="alert"
+          aria-live="polite"
+          className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800"
+        >
+          {callbackErrorBanner}
+        </div>
+      ) : null}
 
       {errorMessage ? (
         <div

@@ -46,12 +46,6 @@
       "resend_sent": "We sent a new link to your email.",
       "back_to_login": "Back to sign in"
     },
-    "callback": {
-      "processing": "Finishing your account setup…",
-      "error_title": "We couldn't complete your sign-up",
-      "error_subtitle": "The link may have expired or already been used. Try signing in, or request a new verification link.",
-      "back_to_login": "Back to sign in"
-    },
     "signOut": {
       "label": "Sign out",
       "submitting": "Signing out…"
@@ -96,7 +90,8 @@
     "consent_failed": "We couldn't save your consent. Please try again.",
     "consent_required": "Please accept all required consents to create an account.",
     "password_too_short": "Password must be at least 8 characters.",
-    "sign_out_failed": "Could not sign out. Please try again."
+    "sign_out_failed": "Could not sign out. Please try again.",
+    "callback_failed": "Authentication link has expired or has already been used. Try signing in or request a new link."
   },
   "toasts": {
     "guest_migrated": "Your guest project has been migrated to the cloud.",

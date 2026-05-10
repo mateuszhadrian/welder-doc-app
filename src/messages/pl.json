@@ -46,12 +46,6 @@
       "resend_sent": "Wysłaliśmy nowy link na Twój email.",
       "back_to_login": "Wróć do logowania"
     },
-    "callback": {
-      "processing": "Kończymy konfigurację Twojego konta…",
-      "error_title": "Nie udało się dokończyć rejestracji",
-      "error_subtitle": "Link mógł wygasnąć lub zostać już użyty. Spróbuj zalogować się lub wyślij link ponownie.",
-      "back_to_login": "Wróć do logowania"
-    },
     "signOut": {
       "label": "Wyloguj",
       "submitting": "Wylogowywanie…"
@@ -96,7 +90,8 @@
     "consent_failed": "Nie udało się zapisać zgody. Spróbuj ponownie.",
     "consent_required": "Aby założyć konto, zaakceptuj wszystkie wymagane zgody.",
     "password_too_short": "Hasło musi mieć minimum 8 znaków.",
-    "sign_out_failed": "Nie udało się wylogować. Spróbuj ponownie."
+    "sign_out_failed": "Nie udało się wylogować. Spróbuj ponownie.",
+    "callback_failed": "Link autoryzacyjny wygasł lub został już użyty. Spróbuj zalogować się lub wyślij link ponownie."
   },
   "toasts": {
     "guest_migrated": "Twój projekt z trybu gościa został przeniesiony do chmury.",
