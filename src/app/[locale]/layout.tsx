@@ -7,6 +7,7 @@ import { getMessages, setRequestLocale } from 'next-intl/server';
 import { Toaster } from 'sonner';
 import { routing, type Locale } from '@/i18n/routing';
 import { createClient } from '@/lib/supabase/server';
+import { getUserProfile } from '@/lib/supabase/profile';
 import { CURRENT_TOS_VERSION } from '@/lib/consent/version';
 import { LocaleSwitcher } from '@/components/locale-switcher/LocaleSwitcher';
 import { AuthProvider } from '@/components/providers/AuthProvider';
@@ -85,22 +86,20 @@ export default async function LocaleLayout({
   } = await supabase.auth.getUser();
 
   if (user && !isPublicSegment(segment)) {
-    const { data: profile } = await supabase
-      .from('user_profiles')
-      .select('locale, current_consent_version')
-      .eq('id', user.id)
-      .single<{ locale: string; current_consent_version: string | null }>();
+    const { data: profile, error: profileError } = await getUserProfile(supabase, user.id);
 
-    if (profile) {
-      if (profile.locale !== locale) {
-        redirect(buildLocalePath(profile.locale, segment));
-      }
-      if (
-        !profile.current_consent_version ||
-        profile.current_consent_version < CURRENT_TOS_VERSION
-      ) {
-        redirect(buildLocalePath(locale, '/consent-required'));
-      }
+    if (profileError || !profile) {
+      // Treat any read failure (expired JWT, missing row, RLS rejection) as
+      // session corruption — force re-auth instead of silently rendering
+      // the protected shell. Public segments are filtered out above.
+      redirect(buildLocalePath(locale, '/login'));
+    }
+
+    if (profile.locale !== locale) {
+      redirect(buildLocalePath(profile.locale, segment));
+    }
+    if (!profile.current_consent_version || profile.current_consent_version < CURRENT_TOS_VERSION) {
+      redirect(buildLocalePath(locale, '/consent-required'));
     }
   }
 

@@ -39,6 +39,19 @@ export interface MappedError {
 export function mapPostgrestError(err: PostgrestError | null): MappedError | null {
   if (!err) return null;
 
+  // JWT issues → UNAUTHORIZED.
+  // PGRST301 = JWT expired/invalid (PostgREST surfaces 401 with this code).
+  // 42501    = insufficient_privilege (Postgres-level — e.g. RLS USING clause
+  //            evaluating with `auth.uid()` NULL when the JWT cookie is gone).
+  if (err.code === 'PGRST301' || err.code === '42501') {
+    return {
+      business: BusinessError.UNAUTHORIZED,
+      message: 'errors.unauthorized',
+      rawCode: err.code,
+      rawMessage: err.message
+    };
+  }
+
   // P0001 = RAISE EXCEPTION from a DB function/trigger.
   if (err.code === 'P0001') {
     if (err.message.includes('project_limit_exceeded')) {

@@ -56,6 +56,20 @@ describe('mapPostgrestError', () => {
     expect(m?.business).toBe(BusinessError.CONSENT_VERSION_MISSING);
   });
 
+  it('mapuje PGRST301 (JWT expired) → UNAUTHORIZED', () => {
+    const m = mapPostgrestError(pgErr('PGRST301', 'JWT expired'));
+    expect(m?.business).toBe(BusinessError.UNAUTHORIZED);
+    expect(m?.message).toBe('errors.unauthorized');
+    expect(m?.rawCode).toBe('PGRST301');
+  });
+
+  it('mapuje 42501 (insufficient_privilege) → UNAUTHORIZED', () => {
+    const m = mapPostgrestError(pgErr('42501', 'permission denied'));
+    expect(m?.business).toBe(BusinessError.UNAUTHORIZED);
+    expect(m?.message).toBe('errors.unauthorized');
+    expect(m?.rawCode).toBe('42501');
+  });
+
   it('zwraca UNKNOWN dla niemapowanych kodów', () => {
     const m = mapPostgrestError(pgErr('42P01', 'relation does not exist'));
     expect(m?.business).toBe(BusinessError.UNKNOWN);

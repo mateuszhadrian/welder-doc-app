@@ -1,6 +1,9 @@
-import type { PostgrestSingleResponse } from '@supabase/supabase-js';
+import type { PostgrestSingleResponse, SupabaseClient } from '@supabase/supabase-js';
+import type { Database } from '@/types/database';
 import type { Tables, TablesUpdate } from '@/types/database';
+import type { UserProfileDto } from '@/types/api';
 import { createClient } from './client';
+import { BusinessError, mapPostgrestError, type MappedError } from './errors';
 
 /**
  * Columns that must never be modified through the public profile-update path.
@@ -74,4 +77,55 @@ export async function updateProfile(
   }
 
   return createClient().from('user_profiles').update(safe).eq('id', userId).select().single();
+}
+
+/**
+ * Allowlisted projection for `getUserProfile()`. `paddle_customer_id` is
+ * intentionally excluded from session-client reads (operational metadata,
+ * no UI consumer). Keep this string in sync with `UserProfileDto`.
+ */
+const PROFILE_COLUMNS =
+  'id, plan, locale, current_consent_version, created_at, updated_at' as const;
+
+export type GetUserProfileResult =
+  | { data: UserProfileDto; error: null }
+  | { data: null; error: MappedError };
+
+/**
+ * Read the authenticated user's row from `public.user_profiles`.
+ *
+ * Client-agnostic: accepts the Supabase client as an argument so Server
+ * Components, Route Handlers, and Client Components can all reuse it without
+ * importing the wrong `createClient` variant.
+ *
+ * Authorization is enforced by RLS (`user_profiles_select_authenticated`:
+ * `id = auth.uid()`). The `userId` argument is defence-in-depth — RLS will
+ * still reject any UUID that does not match the active session.
+ *
+ * Errors are normalised through `mapPostgrestError()` to a typed `MappedError`,
+ * so callers must never inspect raw `PostgrestError.message`.
+ */
+export async function getUserProfile(
+  supabase: SupabaseClient<Database>,
+  userId: string
+): Promise<GetUserProfileResult> {
+  const { data, error } = await supabase
+    .from('user_profiles')
+    .select(PROFILE_COLUMNS)
+    .eq('id', userId)
+    .single();
+
+  if (error) {
+    const mapped = mapPostgrestError(error) ?? {
+      business: BusinessError.UNKNOWN,
+      message: 'errors.unknown',
+      rawCode: error.code,
+      rawMessage: error.message
+    };
+    return { data: null, error: mapped };
+  }
+
+  // The `select` string is an exact match for the `UserProfileDto` Pick<>
+  // projection — broaden one and broaden the other.
+  return { data: data as UserProfileDto, error: null };
 }
