@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server';
+import { listConsentLog } from '@/lib/supabase/consentLog';
 import { NextResponse } from 'next/server';
 import type {
   UserExportDto,
@@ -34,11 +35,7 @@ export async function GET(): Promise<NextResponse<UserExportDto | ErrorBody>> {
       .select('id, name, schema_version, created_at, updated_at, data')
       .eq('owner_id', user.id)
       .order('created_at', { ascending: true }),
-    supabase
-      .from('consent_log')
-      .select('consent_type, version, accepted, accepted_at')
-      .eq('user_id', user.id)
-      .order('accepted_at', { ascending: false })
+    listConsentLog(supabase)
   ]);
 
   if (profileRes.error) {
@@ -53,7 +50,11 @@ export async function GET(): Promise<NextResponse<UserExportDto | ErrorBody>> {
     return NextResponse.json<ErrorBody>({ error: 'internal_error' }, { status: 500 });
   }
   if (consentRes.error) {
-    console.error('[user/export] consent_error', { user_id: user.id, code: consentRes.error.code });
+    console.error('[user/export] consent_error', {
+      user_id: user.id,
+      business: consentRes.error.business,
+      code: consentRes.error.rawCode
+    });
     return NextResponse.json<ErrorBody>({ error: 'internal_error' }, { status: 500 });
   }
 
@@ -69,7 +70,7 @@ export async function GET(): Promise<NextResponse<UserExportDto | ErrorBody>> {
       ...d,
       data: d.data as unknown as CanvasDocument
     })),
-    consent_log: consentRes.data ?? []
+    consent_log: consentRes.data
   };
 
   return new NextResponse(JSON.stringify(body), {
