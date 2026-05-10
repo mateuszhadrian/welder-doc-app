@@ -55,6 +55,16 @@
     "signOut": {
       "label": "Wyloguj",
       "submitting": "Wylogowywanie…"
+    },
+    "forgotPassword": {
+      "title": "Resetuj hasło",
+      "subtitle": "Wpisz adres email powiązany z kontem — wyślemy link do ustawienia nowego hasła.",
+      "email_label": "Adres email",
+      "email_placeholder": "twoj@email.pl",
+      "submit": "Wyślij link",
+      "submitting": "Wysyłanie…",
+      "sent_generic": "Jeśli email istnieje w naszej bazie, wysłaliśmy link resetujący. Sprawdź również folder Spam.",
+      "back_to_login": "Powrót do logowania"
     }
   },
   "errors": {

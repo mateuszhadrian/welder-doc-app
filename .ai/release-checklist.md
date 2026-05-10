@@ -13,7 +13,7 @@ Jeśli dodajesz nowy punkt: zostaw zwięzły opis (1–2 linijki), powiązanie z
 - [ ] **Auth → Settings → `Enable email confirmations = ON`.** Bez tego `auth.users.email_confirmed_at` jest ustawiane od razu, co rozbraja defense-in-depth RLS na `documents` (`email_confirmed_at IS NOT NULL`) i pozwala mass-create niepotwierdzonych kont.
 - [ ] **Custom SMTP skonfigurowany** (Resend albo Postmark) z weryfikowaną domeną. Bez tego maile weryfikacyjne nie wychodzą; users utykają na `/auth/check-email` bez wyjścia.
 - [ ] **Site URL = prod URL**, np. `https://welderdoc.app`.
-- [ ] **Redirect URLs zawiera** `https://<prod-domain>/auth/callback` **i** `https://<prod-domain>/en/auth/callback`. Bez wpisu dla `en` link w mailu ląduje w defaultcie i flush consent się nie odpala.
+- [ ] **Redirect URLs zawiera** `https://<prod-domain>/auth/callback` **i** `https://<prod-domain>/en/auth/callback`. Bez wpisu dla `en` link w mailu ląduje w defaultcie i flush consent się nie odpala. **NB:** te same dwa wpisy obsługują US-004 (password reset, `auth.resetPasswordForEmail`) — `localePrefix: 'as-needed'` oznacza, że domyślne `pl` ma URL bez prefixu (`/auth/callback`), nie `/pl/auth/callback` jak literalnie sugeruje password-reset plan §6.3.
 - [ ] **Sprawdź password policy** w Auth → Settings — `Min password length = 8` (zgodnie z `supabase/config.toml`).
 
 ## Supabase Cloud — Database

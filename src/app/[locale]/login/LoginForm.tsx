@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useState, useTransition, type FormEvent } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
@@ -8,6 +9,10 @@ import { routing } from '@/i18n/routing';
 import { createClient } from '@/lib/supabase/client';
 import { BusinessError, mapAuthError, type MappedError } from '@/lib/supabase/errors';
 import { migrateGuestAutosave } from '@/lib/autosave/migrateGuestAutosave';
+
+function buildLocalePath(locale: string, segment: string): string {
+  return locale === routing.defaultLocale ? segment : `/${locale}${segment}`;
+}
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -169,6 +174,13 @@ export function LoginForm({ locale }: Props) {
           className="rounded-md border border-neutral-300 px-3 py-2 text-sm focus:border-neutral-900 focus:outline-none disabled:bg-neutral-50"
         />
       </div>
+
+      <Link
+        href={buildLocalePath(locale, '/forgot-password')}
+        className="self-end text-sm font-medium text-neutral-600 underline hover:text-neutral-900"
+      >
+        {t('forgot_password_link')}
+      </Link>
 
       {errorMessage ? (
         <div

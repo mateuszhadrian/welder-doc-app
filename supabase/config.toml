@@ -27,8 +27,24 @@ file_size_limit = "50MiB"
 
 [auth]
 enabled = true
-site_url = "http://127.0.0.1:3000"
-additional_redirect_urls = ["http://127.0.0.1:3000"]
+site_url = "http://localhost:3000"
+# Wildcard pattern needed: a literal origin only matches that exact URL —
+# supabase rejects `?redirect_to=...origin/auth/callback?next=...` as "not
+# whitelisted" and bounces the user back to `site_url` with
+# `?error=access_denied&error_code=otp_expired` in both query and hash
+# (misleading — token is fine, the redirect target is what failed).
+# Local canonical host is `localhost` (matches `.env.local
+# NEXT_PUBLIC_APP_URL`). The `127.0.0.1` entries are kept for muscle-memory
+# bookmarks and any tooling that still opens the IPv4 host directly — but
+# auth flows must complete on the same host they started on (PKCE verifier
+# is cookie-bound to the origin).
+# Cloud parity lives in `.ai/release-checklist.md` Supabase → Auth section.
+additional_redirect_urls = [
+  "http://localhost:3000",
+  "http://localhost:3000/**",
+  "http://127.0.0.1:3000",
+  "http://127.0.0.1:3000/**"
+]
 jwt_expiry = 3600
 enable_signup = true
 # PRD US-001: minimalna długość hasła 8 znaków — egzekwowane po stronie GoTrue
@@ -39,3 +55,9 @@ minimum_password_length = 8
 enable_signup = true
 double_confirm_changes = true
 enable_confirmations = false
+
+# US-004 password reset & US-001 email confirmation: explicit hourly cap
+# on outgoing auth emails per IP. Matches Supabase default (4) but pinned
+# here so a dashboard drift can't silently widen the floodgate.
+[auth.rate_limit]
+email_sent = 4
