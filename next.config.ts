@@ -9,7 +9,9 @@ const config: NextConfig = {
   // Bez tego wejście przez `127.0.0.1` zamiast `localhost` powoduje, że klienckie
   // bundle nie ładują się, komponenty 'use client' nie hydratują, a formularze
   // robią natywny submit (m.in. wyciekając hasło do URL przy GET).
-  allowedDevOrigins: ['127.0.0.1', 'localhost'],
+  // LAN IP (`192.168.1.184`) dodany dla testów mobilnych — DHCP może zmienić,
+  // zaktualizuj w tandemie z NEXT_PUBLIC_SUPABASE_URL w .env.local.
+  allowedDevOrigins: ['127.0.0.1', 'localhost', '192.168.1.184'],
   turbopack: {
     resolveAlias: {
       canvas: './empty.js'
