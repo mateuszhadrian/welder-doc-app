@@ -133,6 +133,15 @@
     "create_new": "Nowy projekt",
     "creating": "Tworzenie…"
   },
+  "dashboard": {
+    "title": "Twoje projekty",
+    "empty_state": "Nie masz jeszcze żadnych projektów. Kliknij Nowy projekt, aby zacząć.",
+    "last_updated": "Aktualizacja: {date}",
+    "previous": "Poprzednia",
+    "next": "Następna",
+    "page_info": "{from}–{to} z {total}",
+    "pagination_label": "Paginacja projektów"
+  },
   "account": {
     "password_updated": "Hasło zostało zmienione.",
     "delete": {

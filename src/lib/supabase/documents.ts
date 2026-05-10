@@ -1,12 +1,22 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Database, Json } from '@/types/database';
-import type { CanvasDocument, CreateDocumentCommand, DocumentDto } from '@/types/api';
+import type {
+  CanvasDocument,
+  CreateDocumentCommand,
+  DocumentDto,
+  DocumentListItemDto
+} from '@/types/api';
 import { BusinessError, mapPostgrestError, type MappedError } from './errors';
 
 const MAX_NAME_LENGTH = 100;
 const MAX_PAYLOAD_BYTES = 5 * 1024 * 1024;
 
 const SELECT_COLUMNS = 'id, name, schema_version, data, created_at, updated_at' as const;
+const LIST_SELECT_COLUMNS = 'id, name, created_at, updated_at' as const;
+
+const DEFAULT_LIST_LIMIT = 50;
+const MIN_LIST_LIMIT = 1;
+const MAX_LIST_LIMIT = 100;
 
 export type CreateDocumentResult =
   | { data: DocumentDto; error: null }
@@ -207,4 +217,121 @@ function isCanvasDocument(value: unknown): value is CanvasDocument {
     Array.isArray(v.shapes) &&
     Array.isArray(v.weldUnits)
   );
+}
+
+// ============================================================
+// listDocuments — US-008 / US-010 dashboard project list
+// ============================================================
+
+export type ListDocumentsSort = 'updated_at_desc' | 'name_asc' | 'created_at_desc';
+
+interface SortConfig {
+  column: 'updated_at' | 'created_at' | 'name';
+  ascending: boolean;
+}
+
+// Whitelist (not a free-form `order` string from the URL) — prevents PostgREST
+// from sorting on a column the UI never asked for, e.g. `share_token`, which
+// would leak ordering signals about row state to the client.
+const SORT_MAP: Record<ListDocumentsSort, SortConfig> = {
+  updated_at_desc: { column: 'updated_at', ascending: false },
+  name_asc: { column: 'name', ascending: true },
+  created_at_desc: { column: 'created_at', ascending: false }
+};
+
+export interface ListDocumentsParams {
+  /**
+   * `auth.uid()` of the caller — redundant with RLS but kept for query-plan
+   * clarity and easier debugging. RLS is the only authorisation layer.
+   */
+  userId: string;
+  /** Default 50; clamped down to 100; <1 throws RangeError. */
+  limit?: number;
+  /** Default 0; <0 throws RangeError. */
+  offset?: number;
+  /** Default 'updated_at_desc' (covered by `documents_owner_id_updated_at_idx`). */
+  sort?: ListDocumentsSort;
+}
+
+export interface ListDocumentsResultData {
+  items: DocumentListItemDto[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export type ListDocumentsResult =
+  | { data: ListDocumentsResultData; error: null }
+  | { data: null; error: MappedError };
+
+/**
+ * List documents owned by the authenticated user (US-008/US-010 dashboard).
+ *
+ * Authorisation lives in the database, not here:
+ *   - RLS filters by `owner_id = auth.uid()` AND `email_confirmed_at IS NOT NULL`
+ *     via the `public.user_email_confirmed()` SECURITY DEFINER helper. Unconfirmed
+ *     users get `[]`, never a 401. Application code MUST NOT add a parallel
+ *     ownership check — it would mask RLS regressions in code review.
+ *
+ * The `data` JSONB column is intentionally excluded from the projection: it
+ * can reach 5 MB per row (250 MB on a max-pro account of 50 docs). Treat the
+ * absence of `data` here as a non-negotiable invariant.
+ *
+ * Throws `RangeError` when `limit` / `offset` fail input validation — that's a
+ * developer error, never end-user input. Runtime DB errors come back through
+ * the discriminated `{ data, error }` return like the rest of this module.
+ */
+export async function listDocuments(
+  supabase: SupabaseClient<Database>,
+  params: ListDocumentsParams
+): Promise<ListDocumentsResult> {
+  const limit = clampListLimit(params.limit);
+  const offset = clampListOffset(params.offset);
+  const sort = params.sort ?? 'updated_at_desc';
+  const { column, ascending } = SORT_MAP[sort];
+
+  const { data, error, count } = await supabase
+    .from('documents')
+    .select(LIST_SELECT_COLUMNS, { count: 'exact' })
+    .eq('owner_id', params.userId)
+    .order(column, { ascending })
+    .range(offset, offset + limit - 1);
+
+  if (error) {
+    const mapped = mapPostgrestError(error) ?? {
+      business: BusinessError.UNKNOWN,
+      message: 'errors.unknown',
+      rawCode: error.code,
+      rawMessage: error.message
+    };
+    return { data: null, error: mapped };
+  }
+
+  return {
+    data: {
+      items: (data ?? []) as DocumentListItemDto[],
+      total: count ?? 0,
+      limit,
+      offset
+    },
+    error: null
+  };
+}
+
+function clampListLimit(raw: number | undefined): number {
+  if (raw === undefined) return DEFAULT_LIST_LIMIT;
+  if (!Number.isInteger(raw) || raw < MIN_LIST_LIMIT) {
+    throw new RangeError(
+      `listDocuments: limit must be an integer >= ${MIN_LIST_LIMIT}, got ${raw}`
+    );
+  }
+  return Math.min(raw, MAX_LIST_LIMIT);
+}
+
+function clampListOffset(raw: number | undefined): number {
+  if (raw === undefined) return 0;
+  if (!Number.isInteger(raw) || raw < 0) {
+    throw new RangeError(`listDocuments: offset must be an integer >= 0, got ${raw}`);
+  }
+  return raw;
 }

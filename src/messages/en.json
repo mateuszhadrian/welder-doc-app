@@ -133,6 +133,15 @@
     "create_new": "New project",
     "creating": "Creating…"
   },
+  "dashboard": {
+    "title": "Your projects",
+    "empty_state": "You don't have any projects yet. Click \"New project\" to get started.",
+    "last_updated": "Updated: {date}",
+    "previous": "Previous",
+    "next": "Next",
+    "page_info": "{from}–{to} of {total}",
+    "pagination_label": "Projects pagination"
+  },
   "account": {
     "password_updated": "Password updated successfully.",
     "delete": {

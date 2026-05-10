@@ -48,7 +48,10 @@ test.describe('Login flow', () => {
     await page.getByRole('button', { name: 'Zaloguj się' }).click();
 
     await page.waitForURL((url) => url.pathname === '/');
-    await expect(page.getByRole('heading', { name: 'WelderDoc' })).toBeVisible();
+    // The home page is now the dashboard (US-008/US-010 list view) — assert
+    // the localised h1 instead of the static "WelderDoc" wordmark in the layout
+    // header (which is a span, not a heading).
+    await expect(page.getByRole('heading', { name: 'Twoje projekty' })).toBeVisible();
   });
 
   test('invalid_credentials renders mapped i18n message', async ({ page }) => {

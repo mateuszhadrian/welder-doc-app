@@ -73,7 +73,9 @@ test.describe('Locale switching (US-050)', () => {
 
     // Default locale `pl` → no URL prefix.
     await page.waitForURL((url) => url.pathname === '/');
-    await expect(page.getByRole('heading', { name: 'WelderDoc' })).toBeVisible();
+    // Home page is now the dashboard — assert its localised h1 to confirm we
+    // landed on the PL render before flipping the switcher.
+    await expect(page.getByRole('heading', { name: 'Twoje projekty' })).toBeVisible();
 
     // Trigger the switcher in the layout header.
     await page
