@@ -4,6 +4,7 @@ import type { Database } from '@/types/database';
 import type { CanvasDocument, CreateDocumentCommand, DocumentListItemDto } from '@/types/api';
 import {
   createDocument,
+  deleteDocument,
   getDocument,
   listDocuments,
   renameDocument,
@@ -1222,5 +1223,181 @@ describe('resizeCanvas — post-merge payload size guard', () => {
 
     expect(result.error?.business).toBe(BusinessError.DOCUMENT_PAYLOAD_TOO_LARGE);
     expect(spies.update).not.toHaveBeenCalled();
+  });
+});
+
+// ============================================================
+// deleteDocument — fixtures + mocks
+// ============================================================
+
+interface DeleteMockOptions {
+  deleteError?: Partial<PostgrestError> | null;
+  user?: { id: string } | null;
+  authError?: Partial<AuthError> | null;
+}
+
+/**
+ * Mock chain for `from('documents').delete().eq('id', id)` + `auth.getUser()`.
+ * Terminal `.eq()` resolves directly — DELETE deliberately does NOT chain
+ * `.select()` / `.single()` (keeps the response empty per plan §2). The
+ * `getUser` preflight guards the anon-cookies-gone case where PostgREST
+ * would otherwise return 204 with 0 rows under the `anon` role.
+ */
+function makeSupabaseForDelete(opts: DeleteMockOptions = {}) {
+  const eq = vi.fn().mockResolvedValue({
+    data: null,
+    error: opts.deleteError ?? null
+  });
+  const del = vi.fn(() => ({ eq }));
+  const from = vi.fn(() => ({ delete: del }));
+  const getUser = vi.fn().mockResolvedValue({
+    data: { user: opts.user === undefined ? { id: USER_ID } : opts.user },
+    error: opts.authError ?? null
+  });
+  const client = { from, auth: { getUser } } as unknown as SupabaseClient<Database>;
+  return { client, spies: { from, delete: del, eq, getUser } };
+}
+
+describe('deleteDocument — auth preflight', () => {
+  it('returns UNAUTHORIZED without contacting the table when getUser returns no user', async () => {
+    // Cleared-cookies case: anonymous request would otherwise reach PostgREST
+    // as the `anon` role and produce a misleading 204 with 0 rows affected
+    // (RLS filters all rows under the documents_delete_authenticated policy,
+    // which is FOR authenticated only). The preflight short-circuits this so
+    // the UI never shows a "deleted" toast for a delete that didn't happen.
+    const { client, spies } = makeSupabaseForDelete({ user: null });
+    const result = await deleteDocument(client, DOCUMENT_ID);
+
+    expect(result.data).toBeNull();
+    expect(result.error?.business).toBe(BusinessError.UNAUTHORIZED);
+    expect(result.error?.message).toBe('errors.unauthorized');
+    expect(spies.from).not.toHaveBeenCalled();
+    expect(spies.delete).not.toHaveBeenCalled();
+  });
+
+  it('returns UNAUTHORIZED when getUser surfaces an AuthError', async () => {
+    const { client, spies } = makeSupabaseForDelete({
+      user: null,
+      authError: { name: 'AuthSessionMissingError', message: 'Auth session missing!' }
+    });
+    const result = await deleteDocument(client, DOCUMENT_ID);
+
+    expect(result.error?.business).toBe(BusinessError.UNAUTHORIZED);
+    expect(spies.from).not.toHaveBeenCalled();
+  });
+
+  it('proceeds to the delete when getUser returns a user', async () => {
+    const { client, spies } = makeSupabaseForDelete();
+    await deleteDocument(client, DOCUMENT_ID);
+
+    expect(spies.getUser).toHaveBeenCalledTimes(1);
+    expect(spies.delete).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('deleteDocument — happy path', () => {
+  it('returns { data: null, error: null } when the SDK reports no error', async () => {
+    const { client } = makeSupabaseForDelete();
+    const result = await deleteDocument(client, DOCUMENT_ID);
+
+    expect(result).toEqual({ data: null, error: null });
+  });
+
+  it('calls from(documents).delete().eq(id, documentId) with no .select() chained', async () => {
+    const { client, spies } = makeSupabaseForDelete();
+    await deleteDocument(client, DOCUMENT_ID);
+
+    expect(spies.from).toHaveBeenCalledWith('documents');
+    expect(spies.delete).toHaveBeenCalledTimes(1);
+    expect(spies.eq).toHaveBeenCalledWith('id', DOCUMENT_ID);
+    // Idempotent surface: no `.select()` is exposed on the chain mock, so a
+    // regression that adds `.select()` would crash this test (TypeError).
+    const firstCall = spies.delete.mock.results[0];
+    if (!firstCall) throw new Error('delete() was never called');
+    const eqResult = await firstCall.value.eq('id', DOCUMENT_ID);
+    expect(eqResult).not.toHaveProperty('select');
+  });
+
+  it('idempotent: same { data: null, error: null } when the row never existed (RLS / 0 rows)', async () => {
+    // Without `.single()`, PostgREST does NOT raise PGRST116 for 0 rows
+    // affected. RLS rejection (other user's row) and "already deleted" both
+    // surface as the same success — by design (plan §6.7 — no info leakage).
+    const { client } = makeSupabaseForDelete();
+    const result = await deleteDocument(client, '99999999-9999-9999-9999-999999999999');
+
+    expect(result.data).toBeNull();
+    expect(result.error).toBeNull();
+  });
+});
+
+describe('deleteDocument — DB error mapping', () => {
+  it('maps PGRST301 (JWT expired) to UNAUTHORIZED via mapPostgrestError', async () => {
+    const { client } = makeSupabaseForDelete({
+      deleteError: {
+        code: 'PGRST301',
+        message: 'JWT expired',
+        details: '',
+        hint: '',
+        name: 'PostgrestError'
+      }
+    });
+
+    const result = await deleteDocument(client, DOCUMENT_ID);
+
+    expect(result.data).toBeNull();
+    expect(result.error?.business).toBe(BusinessError.UNAUTHORIZED);
+    expect(result.error?.message).toBe('errors.unauthorized');
+  });
+
+  it('maps 42501 (insufficient_privilege) to UNAUTHORIZED', async () => {
+    const { client } = makeSupabaseForDelete({
+      deleteError: {
+        code: '42501',
+        message: 'permission denied for table documents',
+        details: '',
+        hint: '',
+        name: 'PostgrestError'
+      }
+    });
+
+    const result = await deleteDocument(client, DOCUMENT_ID);
+
+    expect(result.error?.business).toBe(BusinessError.UNAUTHORIZED);
+  });
+
+  it('falls back to UNKNOWN with rawCode/rawMessage for an unrecognised PostgrestError', async () => {
+    const { client } = makeSupabaseForDelete({
+      deleteError: {
+        code: '08006',
+        message: 'connection failure',
+        details: '',
+        hint: '',
+        name: 'PostgrestError'
+      }
+    });
+
+    const result = await deleteDocument(client, DOCUMENT_ID);
+
+    expect(result.error?.business).toBe(BusinessError.UNKNOWN);
+    expect(result.error?.rawCode).toBe('08006');
+    expect(result.error?.rawMessage).toBe('connection failure');
+  });
+
+  it('falls back to UNKNOWN for a PostgrestError with an undefined code', async () => {
+    // Defensive: `mapPostgrestError` returns its UNKNOWN MappedError for any
+    // non-null error it doesn't recognise; verify deleteDocument forwards
+    // that without crashing on the missing code.
+    const { client } = makeSupabaseForDelete({
+      deleteError: {
+        message: 'something went wrong',
+        details: '',
+        hint: '',
+        name: 'PostgrestError'
+      } as Partial<PostgrestError>
+    });
+
+    const result = await deleteDocument(client, DOCUMENT_ID);
+
+    expect(result.error?.business).toBe(BusinessError.UNKNOWN);
   });
 });

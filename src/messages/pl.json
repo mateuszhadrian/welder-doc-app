@@ -147,7 +147,17 @@
     "previous": "Poprzednia",
     "next": "Następna",
     "page_info": "{from}–{to} z {total}",
-    "pagination_label": "Paginacja projektów"
+    "pagination_label": "Paginacja projektów",
+    "delete": {
+      "action": "Usuń",
+      "action_aria": "Usuń projekt {name}",
+      "title": "Usuń projekt",
+      "body": "Czy na pewno usunąć projekt „{name}\"? Tej operacji nie można cofnąć.",
+      "confirm": "Usuń",
+      "cancel": "Anuluj",
+      "deleting": "Usuwanie…",
+      "success": "Projekt usunięty"
+    }
   },
   "account": {
     "password_updated": "Hasło zostało zmienione.",

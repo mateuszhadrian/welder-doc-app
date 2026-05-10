@@ -522,6 +522,67 @@ export async function saveDocumentData(
 }
 
 // ============================================================
+// deleteDocument — US-011 (DELETE /rest/v1/documents)
+// ============================================================
+
+export type DeleteDocumentResult = { data: null; error: null } | { data: null; error: MappedError };
+
+/**
+ * Hard-delete a document by id (US-011, RODO art. 17).
+ *
+ * Authorisation:
+ *   - The DB RLS policy `documents_delete_authenticated` is the source of
+ *     truth for ownership/email-confirmed: `owner_id = auth.uid()` AND
+ *     `public.user_email_confirmed()`. Cross-tenant deletes for OTHER
+ *     authenticated users are filtered (0 rows, no error) so existence of
+ *     other users' UUIDs cannot be probed by status code (plan §6.7) —
+ *     "deleted" and "RLS-filtered" both resolve to `{ error: null }`.
+ *
+ *   - The `auth.getUser()` preflight below is NOT a duplicate of RLS. It
+ *     guards the anon-role-with-no-cookies case: a request without a JWT
+ *     hits PostgREST as the `anon` role, which has NO delete policy on
+ *     `documents` — RLS filters all rows and PostgREST returns the same
+ *     204 No Content as a real delete. Without this check, a user whose
+ *     session cookies were lost (logout in another tab, manual cookie
+ *     clear, etc.) would see a "deleted" toast for a delete that never
+ *     happened. Same defensive pattern as `createDocument`.
+ *
+ * No `.select()` is chained on purpose: keeping the response empty (`204`)
+ * avoids round-tripping the deleted row to the client. The DB has no
+ * `BEFORE DELETE` trigger and no FKs point INTO `documents`, so the row is
+ * the leaf — single-step delete, no cascade work to mirror here.
+ */
+export async function deleteDocument(
+  supabase: SupabaseClient<Database>,
+  documentId: string
+): Promise<DeleteDocumentResult> {
+  const {
+    data: { user },
+    error: authError
+  } = await supabase.auth.getUser();
+  if (authError || !user) {
+    return {
+      data: null,
+      error: { business: BusinessError.UNAUTHORIZED, message: 'errors.unauthorized' }
+    };
+  }
+
+  const { error } = await supabase.from('documents').delete().eq('id', documentId);
+
+  if (error) {
+    const mapped = mapPostgrestError(error) ?? {
+      business: BusinessError.UNKNOWN,
+      message: 'errors.unknown',
+      rawCode: error.code,
+      rawMessage: error.message
+    };
+    return { data: null, error: mapped };
+  }
+
+  return { data: null, error: null };
+}
+
+// ============================================================
 // resizeCanvas — US-014 (PATCH /rest/v1/documents, 3-step RMW)
 // ============================================================
 

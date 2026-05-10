@@ -70,7 +70,10 @@ test.describe.serial('Create document (US-008)', () => {
   }) => {
     await signInAsPlOk(page);
 
-    await page.getByRole('button', { name: 'Nowy projekt' }).click();
+    // `exact: true` to avoid colliding with the per-row delete trigger's
+    // aria-label ("Usuń projekt {name}"), which substring-matches "Nowy projekt"
+    // whenever the user already has a doc with the default name.
+    await page.getByRole('button', { name: 'Nowy projekt', exact: true }).click();
 
     // The canvas route doesn't exist yet (it'll 404 inside the locale layout)
     // — we only care that navigation happened with a UUID, which proves the
@@ -87,14 +90,17 @@ test.describe.serial('Create document (US-008)', () => {
 
     // Burn the user's single Free-plan project quota in this test, so the
     // assertion does not depend on state left behind by another test or spec.
-    await page.getByRole('button', { name: 'New project' }).click();
+    // `exact: true` to avoid colliding with the per-row delete trigger's
+    // aria-label ("Delete project {name}"), which substring-matches
+    // "New project" once the first doc has been created.
+    await page.getByRole('button', { name: 'New project', exact: true }).click();
     await page.waitForURL(
       /\/en\/canvas\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
     );
 
     // Back to home; click again — trigger should fire.
     await page.goto('/en');
-    await page.getByRole('button', { name: 'New project' }).click();
+    await page.getByRole('button', { name: 'New project', exact: true }).click();
 
     // The toast text comes from `errors.project_limit_exceeded` — must match
     // the EN message exactly. Sonner renders into a portal at the root, so a

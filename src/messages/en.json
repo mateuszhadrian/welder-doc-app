@@ -147,7 +147,17 @@
     "previous": "Previous",
     "next": "Next",
     "page_info": "{from}–{to} of {total}",
-    "pagination_label": "Projects pagination"
+    "pagination_label": "Projects pagination",
+    "delete": {
+      "action": "Delete",
+      "action_aria": "Delete project {name}",
+      "title": "Delete project",
+      "body": "Are you sure you want to delete \"{name}\"? This action cannot be undone.",
+      "confirm": "Delete",
+      "cancel": "Cancel",
+      "deleting": "Deleting…",
+      "success": "Project deleted"
+    }
   },
   "account": {
     "password_updated": "Password updated successfully.",
