@@ -127,6 +127,7 @@
     "password_too_short": "Hasło musi mieć minimum 8 znaków.",
     "password_mismatch": "Hasła nie są takie same.",
     "sign_out_failed": "Nie udało się wylogować. Spróbuj ponownie.",
+    "subscription_load_failed": "Nie udało się wczytać subskrypcji. Spróbuj ponownie.",
     "callback_failed": "Link autoryzacyjny wygasł lub został już użyty. Spróbuj zalogować się lub wyślij link ponownie."
   },
   "toasts": {
@@ -182,5 +183,32 @@
     "label": "Język interfejsu",
     "locale_pl": "PL",
     "locale_en": "EN"
+  },
+  "billing": {
+    "page_title": "Subskrypcja",
+    "history_title": "Historia subskrypcji",
+    "current_period_start": "Początek okresu",
+    "current_period_end": "Koniec okresu",
+    "cancels_at": "Anulowanie",
+    "free_plan_title": "Plan Free",
+    "free_plan_subtitle": "Korzystasz z planu Free. Przejdź na Pro, aby tworzyć więcej projektów i odblokować dodatkowe funkcje.",
+    "upgrade_cta": "Przejdź na Pro",
+    "upgrade_pending": "Przetwarzanie…",
+    "manage_subscription_cta": "Zarządzaj subskrypcją",
+    "processing_payment_toast": "Płatność jest przetwarzana. Odśwież stronę za chwilę.",
+    "payment_activated_toast": "Subskrypcja Pro została aktywowana.",
+    "error_title": "Nie udało się wczytać subskrypcji",
+    "retry": "Spróbuj ponownie",
+    "status": {
+      "trialing": "Okres próbny",
+      "active": "Aktywna",
+      "past_due": "Płatność zaległa",
+      "paused": "Wstrzymana",
+      "canceled": "Anulowana"
+    },
+    "plan_tier": {
+      "pro_monthly": "Pro Miesięczna",
+      "pro_annual": "Pro Roczna"
+    }
   }
 }

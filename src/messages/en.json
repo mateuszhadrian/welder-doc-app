@@ -127,6 +127,7 @@
     "password_too_short": "Password must be at least 8 characters.",
     "password_mismatch": "Passwords do not match.",
     "sign_out_failed": "Could not sign out. Please try again.",
+    "subscription_load_failed": "Could not load subscription. Please try again.",
     "callback_failed": "Authentication link has expired or has already been used. Try signing in or request a new link."
   },
   "toasts": {
@@ -182,5 +183,32 @@
     "label": "Interface language",
     "locale_pl": "PL",
     "locale_en": "EN"
+  },
+  "billing": {
+    "page_title": "Subscription",
+    "history_title": "Subscription history",
+    "current_period_start": "Period start",
+    "current_period_end": "Period end",
+    "cancels_at": "Cancels on",
+    "free_plan_title": "Free plan",
+    "free_plan_subtitle": "You're on the Free plan. Upgrade to Pro to create more projects and unlock additional features.",
+    "upgrade_cta": "Upgrade to Pro",
+    "upgrade_pending": "Processing…",
+    "manage_subscription_cta": "Manage subscription",
+    "processing_payment_toast": "Your payment is being processed. Refresh in a moment.",
+    "payment_activated_toast": "Your Pro subscription is now active.",
+    "error_title": "Could not load subscription",
+    "retry": "Try again",
+    "status": {
+      "trialing": "Trialing",
+      "active": "Active",
+      "past_due": "Past due",
+      "paused": "Paused",
+      "canceled": "Canceled"
+    },
+    "plan_tier": {
+      "pro_monthly": "Pro Monthly",
+      "pro_annual": "Pro Annual"
+    }
   }
 }
