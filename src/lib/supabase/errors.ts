@@ -142,6 +142,11 @@ export function mapAuthError(err: AuthError | null): MappedError | null {
       if (lowered.includes('password') && lowered.includes('characters')) {
         return { business: BusinessError.PASSWORD_TOO_WEAK, message: 'errors.password_too_weak' };
       }
+      // Returned by updateUser/getUser when no JWT cookie reaches GoTrue —
+      // e.g. recovery PKCE callback hasn't completed or session expired.
+      if (lowered.includes('auth session missing')) {
+        return { business: BusinessError.UNAUTHORIZED, message: 'errors.unauthorized' };
+      }
       return {
         business: BusinessError.UNKNOWN,
         message: 'errors.unknown',

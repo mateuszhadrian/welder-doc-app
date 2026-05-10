@@ -33,6 +33,10 @@ const PUBLIC_SEGMENTS = [
   '/auth/sign-up',
   '/auth/check-email',
   '/auth/callback',
+  '/forgot-password',
+  // Recovery-session users must be able to set a new password without first
+  // clearing the consent or locale gates — those run on next sign-in instead.
+  '/reset-password',
   '/consent-required',
   '/account-deleted'
 ];

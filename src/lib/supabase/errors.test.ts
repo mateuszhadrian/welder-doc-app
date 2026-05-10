@@ -101,6 +101,12 @@ describe('mapAuthError', () => {
     expect(m?.business).toBe(BusinessError.PASSWORD_TOO_WEAK);
   });
 
+  it('mapuje "Auth session missing" → UNAUTHORIZED', () => {
+    const m = mapAuthError(authErr('Auth session missing!', 401));
+    expect(m?.business).toBe(BusinessError.UNAUTHORIZED);
+    expect(m?.message).toBe('errors.unauthorized');
+  });
+
   it('zwraca UNKNOWN dla niemapowanych komunikatów', () => {
     const m = mapAuthError(authErr('Some unrecognized error', 500));
     expect(m?.business).toBe(BusinessError.UNKNOWN);

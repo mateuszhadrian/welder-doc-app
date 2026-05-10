@@ -59,6 +59,16 @@
       "submitting": "Wysyłanie…",
       "sent_generic": "Jeśli email istnieje w naszej bazie, wysłaliśmy link resetujący. Sprawdź również folder Spam.",
       "back_to_login": "Powrót do logowania"
+    },
+    "resetPassword": {
+      "title": "Ustaw nowe hasło",
+      "subtitle": "Wpisz nowe hasło dwukrotnie, aby potwierdzić zmianę.",
+      "password_label": "Nowe hasło",
+      "password_placeholder": "Minimum 8 znaków",
+      "password_confirm_label": "Powtórz nowe hasło",
+      "password_confirm_placeholder": "Powtórz hasło",
+      "submit": "Zapisz nowe hasło",
+      "submitting": "Zapisywanie…"
     }
   },
   "errors": {
@@ -90,6 +100,7 @@
     "consent_failed": "Nie udało się zapisać zgody. Spróbuj ponownie.",
     "consent_required": "Aby założyć konto, zaakceptuj wszystkie wymagane zgody.",
     "password_too_short": "Hasło musi mieć minimum 8 znaków.",
+    "password_mismatch": "Hasła nie są takie same.",
     "sign_out_failed": "Nie udało się wylogować. Spróbuj ponownie.",
     "callback_failed": "Link autoryzacyjny wygasł lub został już użyty. Spróbuj zalogować się lub wyślij link ponownie."
   },
@@ -107,6 +118,7 @@
     "stub_notice": "Pełny formularz zgód zostanie podłączony w kolejnym zadaniu (POST /api/consent)."
   },
   "account": {
+    "password_updated": "Hasło zostało zmienione.",
     "delete": {
       "title": "Usuń konto",
       "subtitle": "Tej operacji nie można cofnąć. Wszystkie Twoje projekty i dane osobowe zostaną trwale usunięte zgodnie z RODO art. 17.",
