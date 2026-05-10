@@ -117,3 +117,94 @@ export async function createDocument(
     error: null
   };
 }
+
+export type GetDocumentResult =
+  | { data: DocumentDto; error: null }
+  | { data: null; error: MappedError };
+
+/**
+ * Fetch a single document by id (US-009 canvas editor load).
+ *
+ * Authorisation lives in the database, not here:
+ *   - RLS USING enforces `owner_id = auth.uid()` AND `email_confirmed_at IS NOT NULL`
+ *     via the `public.user_email_confirmed()` SECURITY DEFINER helper
+ *     (migration 20260511000000_fix_documents_rls_email_confirmed.sql).
+ *
+ * IDOR is impossible from the client: cross-tenant rows and non-existent UUIDs
+ * both surface identically as PostgREST `PGRST116` (.single() got 0 rows) →
+ * `DOCUMENT_NOT_FOUND`. Existence of other users' documents is not leaked.
+ *
+ * The PGRST116 → DOCUMENT_NOT_FOUND mapping lives here (not in the generic
+ * `mapPostgrestError`) because PGRST116 is a generic "0 or >1 rows" condition;
+ * its meaning is endpoint-specific.
+ *
+ * The returned `DocumentDto` deliberately omits `owner_id` and `share_token*`
+ * — those columns have no UI consumer (api-plan.md §3.2).
+ */
+export async function getDocument(
+  supabase: SupabaseClient<Database>,
+  documentId: string
+): Promise<GetDocumentResult> {
+  const { data, error } = await supabase
+    .from('documents')
+    .select(SELECT_COLUMNS)
+    .eq('id', documentId)
+    .single();
+
+  if (error) {
+    if (error.code === 'PGRST116') {
+      return {
+        data: null,
+        error: {
+          business: BusinessError.DOCUMENT_NOT_FOUND,
+          message: 'errors.document_not_found',
+          rawCode: error.code
+        }
+      };
+    }
+    const mapped = mapPostgrestError(error) ?? {
+      business: BusinessError.UNKNOWN,
+      message: 'errors.unknown',
+      rawCode: error.code,
+      rawMessage: error.message
+    };
+    return { data: null, error: mapped };
+  }
+
+  // Defence-in-depth: even though `data` JSONB has a CHECK constraint enforcing
+  // jsonb_typeof = 'object', a corrupted or pre-codec migration row could still
+  // surface here. Surface a typed error rather than crashing the canvas.
+  if (!isCanvasDocument(data.data)) {
+    return {
+      data: null,
+      error: {
+        business: BusinessError.DOCUMENT_DATA_SHAPE_INVALID,
+        message: 'errors.document_data_shape_invalid'
+      }
+    };
+  }
+
+  return {
+    data: {
+      id: data.id,
+      name: data.name,
+      schema_version: data.schema_version,
+      data: data.data,
+      created_at: data.created_at,
+      updated_at: data.updated_at
+    },
+    error: null
+  };
+}
+
+function isCanvasDocument(value: unknown): value is CanvasDocument {
+  if (!value || typeof value !== 'object') return false;
+  const v = value as Record<string, unknown>;
+  return (
+    typeof v.schemaVersion === 'number' &&
+    typeof v.canvasWidth === 'number' &&
+    typeof v.canvasHeight === 'number' &&
+    Array.isArray(v.shapes) &&
+    Array.isArray(v.weldUnits)
+  );
+}

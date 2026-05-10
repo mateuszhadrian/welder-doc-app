@@ -1,12 +1,14 @@
 # API Endpoint Implementation Plan: Get Document (GET /rest/v1/documents?id=eq.{id})
 
+> **STATUS:** ✅ Implemented on 2026-05-10. As-built deviations from this plan are tracked in §11 (Implementation Log). Sections 1–10 have been edited in place to reflect the shipped behaviour; the original plan rationale is preserved.
+
 ## 1. Endpoint Overview
 
 Pobranie pełnych danych pojedynczego dokumentu canvas (kolumny skalarne + pełen blob `data` JSONB) przez bezpośrednie wywołanie Supabase JS SDK (PostgREST). Endpoint nie ma własnego Route Handlera — klient odpytuje `documents` z RLS chroniącym dostęp na `owner_id = auth.uid() AND email_confirmed_at IS NOT NULL`.
 
 Cel funkcjonalny:
 
-- US-009 / canvas editor: załadowanie sceny po wejściu na URL projektu (`/[locale]/project/[id]`).
+- US-009 / canvas editor: załadowanie sceny po wejściu na URL projektu (`/[locale]/canvas/[id]` — patrz §11.1 dla decyzji `project` → `canvas`).
 - Post-bootstrap deserializacja przez `documentCodec.ts` (jeszcze nie zaimplementowane — patrz CLAUDE.md) z opcjonalną runtime migracją gdy `schema_version < CURRENT_CODEC_VERSION`.
 - Atomowy odczyt całego projektu (nie partycjonowane per shape; cały `data` jest jednym blobem).
 
@@ -55,11 +57,11 @@ Plik: `src/types/api.ts` (już istnieje):
 
 Nowe typy do dodania (helper service):
 
-- `GetDocumentResult` — discriminated union na poziomie service:
+- `GetDocumentResult` — discriminated union na poziomie service. **As-built shape** (zgodne z `createDocument` / `getUserProfile` w tym samym module — patrz §11.2):
   ```typescript
-  type GetDocumentResult =
-    | { ok: true; document: DocumentDto }
-    | { ok: false; error: MappedError };
+  export type GetDocumentResult =
+    | { data: DocumentDto; error: null }
+    | { data: null; error: MappedError };
   ```
   (`MappedError` z `src/lib/supabase/errors.ts` — `api-plan.md` §9.1).
 
@@ -94,12 +96,12 @@ Klient po deserializacji:
 
 ### Status codes przekazywane przez PostgREST
 
-| Code | Sytuacja | Mapping w UI                                                                                                                                                                                                       |
+| Code | Sytuacja | Mapping w UI (as-built)                                                                                                                                                                                           |
 | ---- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 200  | OK       | `loadDocument(data)`                                                                                                                                                                                               |
-| 401  | Brak / wygasła sesja | Redirect do `/[locale]/sign-in` (Server Component fallback)                                                                                                                                                        |
-| 406  | `single()` zwrócił 0 lub >1 wierszy (RLS odrzuciło lub nieistniejące UUID) | Toast `errors.document_not_found` + redirect do listy `/[locale]/projects` (oba przypadki traktowane identycznie — nie ujawniamy istnienia czyichś dokumentów)                                                     |
-| 500  | Błąd DB / nieobsłużony PostgrestError | Toast `errors.unknown` + retry button                                                                                                                                                                              |
+| 200  | OK       | Render `<ProjectLoadedShell document={result.data} />` (placeholder; `<CanvasApp>` integration — patrz §11.5)                                                                                                       |
+| 401  | Brak / wygasła sesja | `redirect('/[locale]/login?next=<encoded canvas path>')` (sign-in route to `/login`, nie `/sign-in` — patrz §11.1)                                                                                                  |
+| 406  | `single()` zwrócił 0 lub >1 wierszy (RLS odrzuciło lub nieistniejące UUID) | `notFound()` z `next/navigation` → standardowa strona 404 Next.js (oba przypadki traktowane identycznie — nie ujawniamy istnienia czyichś dokumentów). Plan zakładał redirect do `/[locale]/projects`, ale taka strona nie istnieje w MVP — patrz §11.4.        |
+| 500  | Błąd DB / nieobsłużony PostgrestError | Inline error component (`<ProjectLoadError>`) z `t(result.error.message)` + przycisk `back_to_projects` na `/[locale]/`                                                                                            |
 
 > **Note:** PostgREST nie zwraca 404 dla `single()` — zwraca `406 Not Acceptable` z `code: PGRST116` gdy liczba wierszy ≠ 1. Mapowanie 404 odbywa się po stronie warstwy service.
 
@@ -142,85 +144,86 @@ Klient po deserializacji:
 
 Zgodnie z `tech-stack.md` §7:
 
-- **Server Component (`/[locale]/project/[id]/page.tsx`):** użyć `await createClient()` z `src/lib/supabase/server.ts` (cookies-based JWT).
+- **Server Component (`/[locale]/canvas/[id]/page.tsx`):** użyć `await createClient()` z `src/lib/supabase/server.ts` (cookies-based JWT). **As-built — patrz `src/app/[locale]/canvas/[id]/page.tsx`.**
 - **Client Component (np. lazy reload sceny w canvas editorze):** użyć `createClient()` z `src/lib/supabase/client.ts`.
 - **NIE używać** `createAdminClient()` — omija RLS, pobiłoby autoryzację per-user.
 
-Preferowana ścieżka: server-side load przez Server Component → przekaż `DocumentDto` jako prop do `<CanvasApp document={...} />` (Client Component z `next/dynamic({ ssr: false })`). Pozwala uniknąć FOUC i double-fetch.
+Preferowana ścieżka: server-side load przez Server Component → przekaż `DocumentDto` jako prop do `<CanvasApp document={...} />` (Client Component z `next/dynamic({ ssr: false })`). Pozwala uniknąć FOUC i double-fetch. **As-built status:** Server Component fetch jest gotowy; `<CanvasApp>` jeszcze nie istnieje, więc page renderuje `<ProjectLoadedShell>` placeholder z metadanymi dokumentu (patrz §11.5).
 
 ### 5.3 External services / data sources
 
 - Supabase Postgres (region `eu-central-1` Frankfurt — zgodne z RODO).
 - Brak innych integracji (Paddle, Sentry, blob storage) — wyłącznie odczyt z `public.documents`.
 
-### 5.4 Service layer
+### 5.4 Service layer (as-built)
 
-Wprowadzić nowy plik `src/lib/supabase/documents.ts`:
+Helper jest dopisany do istniejącego pliku `src/lib/supabase/documents.ts` (obok wcześniej zaimplementowanego `createDocument`). Plan zakładał nowy plik — w trakcie implementacji okazało się że plik już istniał, więc dodano `getDocument()` do tego samego modułu (patrz §11.3).
+
+Klucze zaprojektowane w czasie implementacji (różnice względem oryginalnego szkicu):
+
+1. **Result shape** zmieniono z `{ ok, document } | { ok, error }` na `{ data, error: null } | { data: null, error }` — żeby zachować spójność z `createDocument` / `getUserProfile` w tym samym module.
+2. **`PGRST116` mapping** żyje wewnątrz `getDocument()`, **nie** w `mapPostgrestError`. Powód: `PGRST116` to generyczny "0 or >1 rows" warunek dla `.single()` — semantyka „document not found" jest endpoint-specific (patrz §11.6).
+3. **Const `SELECT_COLUMNS`** współdzielony z `createDocument()` (jedno źródło prawdy).
+
+Skrócony as-built (pełna wersja: `src/lib/supabase/documents.ts`):
 
 ```typescript
-// src/lib/supabase/documents.ts
-import type { SupabaseClient } from '@supabase/supabase-js';
-import type { Database } from '@/types/database';
-import type { CanvasDocument, DocumentDto } from '@/types/api';
-import { mapPostgrestError, BusinessError, type MappedError } from './errors';
+const SELECT_COLUMNS = 'id, name, schema_version, data, created_at, updated_at' as const;
 
-const DOCUMENT_COLUMNS =
-  'id, name, data, schema_version, created_at, updated_at' as const;
+export type GetDocumentResult =
+  | { data: DocumentDto; error: null }
+  | { data: null; error: MappedError };
 
-type GetDocumentResult =
-  | { ok: true; document: DocumentDto }
-  | { ok: false; error: MappedError };
-
-/**
- * Fetch a single document by id. RLS enforces ownership and email-confirmed.
- *
- * Maps PostgREST `PGRST116` (0/>1 rows) → BusinessError-style not_found.
- */
 export async function getDocument(
   supabase: SupabaseClient<Database>,
   documentId: string
 ): Promise<GetDocumentResult> {
   const { data, error } = await supabase
     .from('documents')
-    .select(DOCUMENT_COLUMNS)
+    .select(SELECT_COLUMNS)
     .eq('id', documentId)
     .single();
 
   if (error) {
-    // PGRST116 = 0 or >1 rows — present as not_found (RLS-safe wording)
     if (error.code === 'PGRST116') {
       return {
-        ok: false,
+        data: null,
         error: {
-          business: BusinessError.UNKNOWN, // extend enum: DOCUMENT_NOT_FOUND
+          business: BusinessError.DOCUMENT_NOT_FOUND,
           message: 'errors.document_not_found',
-          rawCode: error.code,
-        },
+          rawCode: error.code
+        }
       };
     }
-    return { ok: false, error: mapPostgrestError(error)! };
+    const mapped = mapPostgrestError(error) ?? {
+      business: BusinessError.UNKNOWN,
+      message: 'errors.unknown',
+      rawCode: error.code,
+      rawMessage: error.message
+    };
+    return { data: null, error: mapped };
   }
 
   if (!isCanvasDocument(data.data)) {
     return {
-      ok: false,
+      data: null,
       error: {
         business: BusinessError.DOCUMENT_DATA_SHAPE_INVALID,
-        message: 'errors.document_data_shape_invalid',
-      },
+        message: 'errors.document_data_shape_invalid'
+      }
     };
   }
 
   return {
-    ok: true,
-    document: {
+    data: {
       id: data.id,
       name: data.name,
       schema_version: data.schema_version,
-      created_at: data.created_at,
-      updated_at: data.updated_at,
       data: data.data,
+      created_at: data.created_at,
+      updated_at: data.updated_at
     },
+    error: null
   };
 }
 
@@ -237,7 +240,7 @@ function isCanvasDocument(value: unknown): value is CanvasDocument {
 }
 ```
 
-> Action item: rozszerzyć `BusinessError` w `src/lib/supabase/errors.ts` o `DOCUMENT_NOT_FOUND = 'document_not_found'`. Dodać klucz `errors.document_not_found` do `src/messages/pl.json` i `src/messages/en.json`.
+> ✅ Action items (zrealizowane): `BusinessError.DOCUMENT_NOT_FOUND` dodany w `src/lib/supabase/errors.ts`. Klucze `errors.document_not_found`, `errors.invalid_document_id` dodane w `src/messages/{pl,en}.json` (klucz `errors.document_data_shape_invalid` był już wcześniej zdefiniowany).
 
 ## 6. Security Considerations
 
@@ -245,7 +248,7 @@ function isCanvasDocument(value: unknown): value is CanvasDocument {
 
 - Sesja Supabase wymagana — JWT w cookies HTTP-Only, set-by-`@supabase/ssr`.
 - W Server Component **zawsze** wywołać `auth.getUser()` przed `getDocument()`. `getUser()` waliduje JWT w Auth API (nie tylko lokalny decode) — zgodnie z architektonicznymi regułami CLAUDE.md.
-- Brak sesji → klient SDK zwraca `401`. Server Component fallback: `redirect('/[locale]/sign-in?next=...')`.
+- Brak sesji → klient SDK zwraca `401`. Server Component fallback: `redirect('/[locale]/login?next=...')` (route to `/login`, nie `/sign-in` — `/sign-in` w tym repo nie istnieje, patrz §11.1).
 
 ### 6.2 Authorization (RLS)
 
@@ -266,7 +269,7 @@ CREATE POLICY documents_owner_all ON public.documents
 Konsekwencje:
 
 - IDOR niemożliwy z poziomu klienta — RLS zwróci pusty result-set zamiast cudzy dokument. `.single()` → `PGRST116` → `errors.document_not_found`.
-- Użytkownik z niezweryfikowanym emailem nie zobaczy nawet własnych dokumentów (zamierzony grace state — UI musi blokować nawigację do `/projects/...` z toast `errors.email_not_confirmed`).
+- Użytkownik z niezweryfikowanym emailem nie zobaczy nawet własnych dokumentów (zamierzony grace state — UI musi blokować nawigację do `/canvas/...` z toast `errors.email_not_confirmed`).
 - `owner_id` celowo nie jest zwracany w `select()` — nie ma wartości dla klienta i wyciekałby identyfikator wewnętrzny.
 
 ### 6.3 Input validation
@@ -299,16 +302,17 @@ Konsekwencje:
 
 ### 7.1 Error matrix
 
-| Sytuacja                                     | Source              | Code             | Service mapping                                                  | UI action                                                                       |
+| Sytuacja                                     | Source              | Code             | Service mapping (as-built)                                       | UI action (as-built)                                                            |
 | -------------------------------------------- | ------------------- | ---------------- | ---------------------------------------------------------------- | ------------------------------------------------------------------------------- |
-| Sukces                                        | PostgREST           | 200              | `{ ok: true, document }`                                         | Hydrate store + render canvas                                                   |
-| Brak sesji / wygasła                         | SDK                 | 401              | `{ ok: false, error: { business: UNAUTHORIZED, ... } }`          | Redirect `/[locale]/sign-in?next=...`                                           |
-| Email niepotwierdzony (RLS zwraca 0 wierszy)  | RLS                 | 406 (`PGRST116`) | `DOCUMENT_NOT_FOUND` (intentional — nie ujawniamy email-state)   | Layout guard powinien wcześniej wykryć i zredirectować do `/email-verification` |
-| Dokument nie istnieje                         | RLS                 | 406 (`PGRST116`) | `DOCUMENT_NOT_FOUND`                                             | Toast `errors.document_not_found` + redirect na listę                           |
-| `id` nie jest UUID                           | PostgREST           | 400 (`22P02`)    | `UNKNOWN` z `rawCode='22P02'`                                    | Toast `errors.invalid_document_id` + redirect na listę                          |
-| `data` JSONB skorumpowany (failed `isCanvasDocument`) | Service             | n/a              | `DOCUMENT_DATA_SHAPE_INVALID`                                    | Toast `errors.document_data_shape_invalid` — eskalacja do supportu              |
-| Network error / DB down                      | SDK / PostgREST     | 5xx / `fetch` failure | `mapPostgrestError` → `UNKNOWN`                              | Toast `errors.unknown` + retry button                                            |
-| Schema version niewspierana przez codec      | Klient (post-fetch) | n/a              | poza scope service'u                                             | Codec rzuca `UnsupportedSchemaError`; UI: toast `errors.codec_too_new`           |
+| Sukces                                        | PostgREST           | 200              | `{ data: DocumentDto, error: null }`                             | Render `<ProjectLoadedShell>` (placeholder; `<CanvasApp>` integration pending)  |
+| Brak sesji / wygasła (przed fetchem)         | Server Component    | n/a (`auth.getUser()`) | n/a                                                            | `redirect('/[locale]/login?next=<encoded canvas path>')`                        |
+| Brak sesji / wygasła (mid-flow)              | SDK                 | 401              | `{ data: null, error: { business: UNAUTHORIZED, ... } }`         | `redirect('/[locale]/login')`                                                   |
+| Email niepotwierdzony (RLS zwraca 0 wierszy)  | RLS                 | 406 (`PGRST116`) | `DOCUMENT_NOT_FOUND` (intentional — nie ujawniamy email-state)   | `notFound()` (Next.js 404). LocaleGuard w layout powinien wcześniej zredirectować do `/[locale]/email-verification` jeśli ekran istnieje. |
+| Dokument nie istnieje                         | RLS                 | 406 (`PGRST116`) | `DOCUMENT_NOT_FOUND`                                             | `notFound()` (Next.js 404)                                                      |
+| `id` nie jest UUID                           | Page (preflight)    | n/a (`isUuid`)    | n/a — preflight short-circuit przed SDK                          | `notFound()` (zero round-trip do DB; klucz `errors.invalid_document_id` zachowany jako fallback gdyby preflight padł) |
+| `data` JSONB skorumpowany (failed `isCanvasDocument`) | Service             | n/a              | `DOCUMENT_DATA_SHAPE_INVALID`                                    | `<ProjectLoadError messageKey="errors.document_data_shape_invalid">` z linkiem do `/[locale]/`  |
+| Network error / DB down                      | SDK / PostgREST     | 5xx / `fetch` failure | `mapPostgrestError` → `UNKNOWN`                              | `<ProjectLoadError messageKey="errors.unknown">` + link `back_to_projects`      |
+| Schema version niewspierana przez codec      | Klient (post-fetch) | n/a              | poza scope service'u                                             | Codec rzuca `UnsupportedSchemaError`; UI: toast `errors.codec_too_new` (deferred — codec nie istnieje) |
 
 ### 7.2 Error logging
 
@@ -318,7 +322,7 @@ Konsekwencje:
 
 ### 7.3 Error mapping rule
 
-Każdy konsument `getDocument()` MUSI używać discriminated union (`if (!result.ok)`), nigdy `error?.message.includes(...)`. Linter/PR review pilnują braku stringowego porównywania (CLAUDE.md, "Error handling uses BusinessError enum").
+Każdy konsument `getDocument()` MUSI używać discriminated union (`if (result.error)`), nigdy `error?.message.includes(...)`. Linter/PR review pilnują braku stringowego porównywania (CLAUDE.md, "Error handling uses BusinessError enum").
 
 ## 8. Performance Considerations
 
@@ -326,7 +330,7 @@ Każdy konsument `getDocument()` MUSI używać discriminated union (`if (!result
 
 - Free user: max 1 dokument; Pro user: ~50 dokumentów (PRD `.ai/prd.md`).
 - Pojedynczy `data` blob ograniczony CHECK constraintem do `< 5 MB`.
-- Read pattern: 1 fetch przy wejściu na `/[locale]/project/[id]` + okazjonalny reload (np. po wyjściu z błędu codec'a).
+- Read pattern: 1 fetch przy wejściu na `/[locale]/canvas/[id]` + okazjonalny reload (np. po wyjściu z błędu codec'a).
 
 ### 8.2 Bottlenecks
 
@@ -356,63 +360,122 @@ Każdy konsument `getDocument()` MUSI używać discriminated union (`if (!result
 
 ## 9. Implementation Steps
 
-1. **Rozszerz `BusinessError` enum.** W `src/lib/supabase/errors.ts` (do zaimplementowania zgodnie z `api-plan.md` §9 — obecnie stub w docs) dodać:
-   - `DOCUMENT_NOT_FOUND = 'document_not_found'`
-   - Upewnić się, że `mapPostgrestError` mapuje `error.code === 'PGRST116'` (lub status 406) na `DOCUMENT_NOT_FOUND` jako gałąź wcześniejsza od `UNKNOWN`.
+1. ✅ **Rozszerzony `BusinessError` enum** — `DOCUMENT_NOT_FOUND = 'document_not_found'` dodany w `src/lib/supabase/errors.ts:8`. `mapPostgrestError` celowo NIE mapuje `PGRST116` (uzasadnienie: §11.6); mapping żyje wewnątrz `getDocument()`.
 
-2. **Dodaj klucze i18n.** W `src/messages/pl.json` i `src/messages/en.json`:
-   - `errors.document_not_found` ("Nie znaleziono dokumentu" / "Document not found").
-   - `errors.invalid_document_id` (na fallback dla `22P02`).
-   - Zweryfikuj że istnieje już `errors.document_data_shape_invalid` (z `api-plan.md` §9 jest w stubie).
+2. ✅ **Klucze i18n** dodane w `src/messages/pl.json` i `src/messages/en.json`:
+   - `errors.document_not_found` ("Nie znaleziono projektu." / "Project not found.")
+   - `errors.invalid_document_id` ("Nieprawidłowy identyfikator projektu." / "Invalid project identifier.")
+   - `errors.document_data_shape_invalid` — był już zdefiniowany.
+   - Dodano też namespace `project.*` (editor_pending_title, back_to_projects, load_error_title, retry).
 
-3. **Utwórz `src/lib/supabase/documents.ts`** zgodnie ze szkicem z §5.4 — eksporty `getDocument(supabase, documentId)` + lokalna `isCanvasDocument()` guard. Zachowaj zasadę: helper przyjmuje gotowy `SupabaseClient<Database>` (DI), nie tworzy klienta sam — pozwala wstrzyknąć browser/server variant.
+3. ✅ **Helper service** `getDocument()` dopisany do istniejącego `src/lib/supabase/documents.ts` (plik istniał z `createDocument()` z US-008). Współdzielony `SELECT_COLUMNS`. Lokalna `isCanvasDocument()` guard. DI klienta zachowane.
 
-4. **Dodaj walidację UUID** (klient-side, przed wywołaniem). Pomocniczo `src/lib/uuid.ts` z `isUuid(value: string): boolean` (regex v4 lub natywny). Wywołać w Server Component przed `getDocument()` — zwraca `notFound()` z Next.js gdy invalid (zamiast 22P02 round-trip).
+4. ✅ **Walidacja UUID** — `src/lib/uuid.ts` z `isUuid(value: string): boolean` (RFC 4122 anchored regex, case-insensitive, v1–v5 + nil). Wywoływane w Server Component przed `getDocument()`.
 
-5. **Stwórz Server Component `src/app/[locale]/project/[id]/page.tsx`** (lub odpowiednik wg architektury app routera):
-   - `await setRequestLocale(locale)`.
-   - `const supabase = await createClient()`.
-   - `const { data: { user } } = await supabase.auth.getUser()`; jeśli brak → `redirect('/[locale]/sign-in?next=...')`.
-   - Zweryfikować `isUuid(params.id)` → `notFound()` jeśli nie.
-   - `const result = await getDocument(supabase, params.id)`.
-   - Discriminated union:
-     - `result.ok === false && result.error.business === DOCUMENT_NOT_FOUND` → `notFound()`.
-     - `result.ok === false` → render error-state component z `t(result.error.message)`.
-     - `result.ok === true` → przekaż jako prop do dynamic-loaded `<CanvasApp document={result.document} />`.
+5. ✅ **Server Component** `src/app/[locale]/canvas/[id]/page.tsx` (route `canvas`, nie `project` — patrz §11.1):
+   - `setRequestLocale(locale)` ✓
+   - `isUuid(id)` → `notFound()` jeśli false ✓
+   - `auth.getUser()` → `redirect('/[locale]/login?next=<encoded canvas path>')` jeśli anonimowy ✓
+   - `getDocument(supabase, id)` → discriminated union (`result.error`):
+     - `DOCUMENT_NOT_FOUND` → `notFound()` ✓
+     - `UNAUTHORIZED` → `redirect('/[locale]/login')` ✓
+     - inne → `<ProjectLoadError messageKey={result.error.message} />` ✓
+     - `result.error === null` → `<ProjectLoadedShell document={result.data} />` (placeholder; `<CanvasApp>` jeszcze nie istnieje — patrz §11.5)
 
-6. **Zaktualizuj `DocumentSlice` (Zustand)** o akcję `loadDocument(dto: DocumentDto)`:
-   - Set `shapes`, `weldUnits`, `canvasWidth`, `canvasHeight` z `dto.data`.
-   - Set `documentId`, `name`, `schemaVersion`, `updatedAt`.
-   - Trigger `documentCodec.migrate()` (gdy `documentCodec.ts` powstanie) jeśli `dto.schema_version < CURRENT_CODEC_VERSION`.
-   - Reset `history[]` + `historyIndex` (świeży load = brak historii).
+6. ⏸️ **`DocumentSlice` / `loadDocument(dto)` deferred** — `useCanvasStore` jest jeszcze placeholder (`src/store/use-canvas-store.ts`); `ShapesSlice`/`HistorySlice`/`CanvasSlice`/`UISlice`/`DocumentSlice` nie istnieją. Wprowadzenie `loadDocument` bez slice'ów do których pisze byłoby half-finished implementation. Integration seam udokumentowany w komentarzu w `canvas/[id]/page.tsx:79-82`. Patrz §11.5.
 
-7. **Testy jednostkowe service** (`src/lib/supabase/documents.test.ts`):
-   - Mock `SupabaseClient` (z `vitest-mock-extended` lub ręczny).
-   - Case: 200 z prawidłowym `data` → `{ ok: true, document }`.
-   - Case: `error.code === 'PGRST116'` → `DOCUMENT_NOT_FOUND`.
-   - Case: `error.code === '22P02'` → `UNKNOWN`.
-   - Case: `data.data = { junk: true }` → `DOCUMENT_DATA_SHAPE_INVALID`.
-   - Coverage threshold: lines 80, branches 70 (zgodnie z `vitest.config.ts` dla `src/lib/**`).
+7. ✅ **Testy jednostkowe** — `src/lib/supabase/documents.test.ts` rozszerzone o 8 testów `getDocument()`:
+   - Happy path z assercjami nazw kolumn projection ✓
+   - `PGRST116` → `DOCUMENT_NOT_FOUND` ✓
+   - `PGRST301` → `UNAUTHORIZED` (przez `mapPostgrestError`) ✓
+   - `22P02` → `UNKNOWN` ✓
+   - 3 warianty `DOCUMENT_DATA_SHAPE_INVALID` (missing `schemaVersion`, null data, non-array shapes) ✓
+   - Total: 24 testy w pliku.
+   - Dodatkowo: `src/lib/uuid.test.ts` — 10 testów dla validatora.
 
-8. **Test E2E (Playwright `chromium-desktop`)** — `e2e/document-load.spec.ts`:
-   - Sign in jako test user (fixture).
-   - `goto /[locale]/project/<known-uuid>` → expect canvas to render with seeded shapes.
-   - `goto /[locale]/project/<not-existing-uuid>` → expect 404 page lub redirect.
-   - `goto /[locale]/project/<other-users-uuid>` → expect identical 404 (RLS leak test).
-   - `await expect(page).toHaveScreenshot()` dla canvas regression.
+8. ✅ **Test E2E** — `e2e/canvas-load.spec.ts` (5 scenariuszy, wszystkie pass na `chromium-desktop`):
+   - Happy path: owner ładuje swój dokument, `<h1>` z nazwą widoczne ✓
+   - Non-existent UUID → 404 ✓
+   - **Cross-tenant RLS leak test:** EN_DOC_ID istnieje w bazie ale należy do `e2e-en-ok` — PL user dostaje 404 identyczne jak dla nieistniejącego UUID ✓ **(load-bearing assertion)**
+   - Invalid UUID syntax → 404 (preflight, no DB round-trip) ✓
+   - Anonymous → redirect na `/login?next=%2Fcanvas%2F<uuid>` ✓
+   - Visual regression (`toHaveScreenshot`) celowo pominięty — `<CanvasApp>` placeholder zmieni się przy integracji silnika; baseline byłby od razu nieaktualny.
 
-9. **Run quality gate:**
+9. ✅ **Quality gate** — wszystkie zielone:
    ```bash
-   pnpm lint
-   pnpm typecheck
-   pnpm test:run src/lib/supabase/documents.test.ts
-   pnpm test:e2e -- --project=chromium-desktop -g "document-load"
+   pnpm lint                                                # ✓
+   pnpm typecheck                                           # ✓
+   pnpm test:run                                            # ✓ 201/201 unit
+   pnpm test:e2e e2e/canvas-load.spec.ts --project=chromium-desktop  # ✓ 5/5
    ```
-   Wszystkie muszą przejść przed merge'm do `main`.
 
-10. **PR checklist (review):**
-    - `getDocument()` używany **wszędzie** zamiast inline `supabase.from('documents').select(...)` w komponentach.
-    - Żaden komponent nie czyta `error.message` bezpośrednio — tylko `result.error.business`.
-    - Server Component wywołuje `auth.getUser()` przed pierwszym query (Layout guard z `architecture-base.md` §17 sprawdzi `current_consent_version` osobno).
-    - Brak `console.log(result.document.data)` w produkcji — payload może zawierać 5 MB sceny.
-    - i18n keys `errors.document_not_found`, `errors.invalid_document_id`, `errors.document_data_shape_invalid` istnieją w obu plikach `pl.json` i `en.json` — Prettier hook na pre-commit waliduje formatowanie.
+10. ✅ **PR checklist (zweryfikowany 2026-05-10):**
+    - `getDocument()` używany w nowym page'u; jedyne inline `supabase.from('documents')` poza helperem to `src/app/api/health/route.ts` (DB connectivity probe — `head: true`) i `src/app/api/user/export/route.ts` (RODO art. 20 — wymaga `owner_id` w projekcji, którą `getDocument` celowo wyklucza). Oba istniały wcześniej i są legitimate. ✓
+    - Żaden nowy kod nie używa `error.message.includes(...)` ani innego stringowego porównania. Czytanie `result.error.message` jako i18n key (typed `MappedError.message`) jest poprawne. ✓
+    - Server Component wywołuje `auth.getUser()` przed pierwszym query; LocaleGuard w `[locale]/layout.tsx` sprawdza `current_consent_version` osobno (route `/canvas/...` nie jest w `PUBLIC_SEGMENTS`, więc gate się uruchamia). ✓
+    - Brak `console.log(result.data.data)` w produkcji. ✓
+    - Wszystkie 3 wymagane klucze i18n (`document_not_found`, `invalid_document_id`, `document_data_shape_invalid`) obecne w obu plikach `pl.json` i `en.json`. ✓
+
+## 11. Implementation Log (deviations from plan, as of 2026-05-10)
+
+### 11.1 Route: `/[locale]/project/[id]` → `/[locale]/canvas/[id]`
+
+**Plan:** route segment `project`.
+**As-built:** route segment `canvas`.
+**Reason:** `src/components/projects/NewProjectButton.tsx:61` already redirects to `/canvas/${id}` after `createDocument` (US-008), and `e2e/documents-create.spec.ts` asserts `/canvas/<uuid>` URL patterns. Standardising on `canvas` aligns the new GET page with the existing CREATE flow — alternative would have required changing the button's redirect + e2e assertions in another task's territory.
+
+**Sign-in route:** plan referenced `/[locale]/sign-in` — actual repo uses `/[locale]/login` (page.tsx + LoginForm.tsx already shipped with US-002).
+
+### 11.2 Result type: `{ ok, ... }` → `{ data, error }`
+
+**Plan:** `{ ok: true, document } | { ok: false, error }`.
+**As-built:** `{ data: DocumentDto, error: null } | { data: null, error: MappedError }`.
+**Reason:** matches the existing pattern of `createDocument()` (same module) and `getUserProfile()` (`src/lib/supabase/profile.ts`). Using two different result-shape conventions in the same module would force callers to remember which helper uses which shape. This shape also mirrors `PostgrestSingleResponse` from `@supabase/supabase-js`, so destructuring is mechanically identical to a raw SDK call.
+
+### 11.3 Helper added to existing file, not new file
+
+**Plan:** "Utwórz nowy plik `src/lib/supabase/documents.ts`".
+**As-built:** appended to existing `src/lib/supabase/documents.ts` (file existed from US-008 with `createDocument()`).
+**Reason:** keep all `documents`-table helpers in one module; share the `SELECT_COLUMNS` constant.
+
+### 11.4 404 surface: `notFound()` instead of toast + redirect
+
+**Plan:** "Toast `errors.document_not_found` + redirect do listy `/[locale]/projects`".
+**As-built:** `notFound()` from `next/navigation` → standard Next.js 404 page. Inline error component (`<ProjectLoadError>`) for non-404 errors with a back-to-home link.
+**Reason:** there is no `/[locale]/projects` listing page in MVP — `[locale]/page.tsx` (home) is currently the only "list" surrogate, and it doesn't have a project list yet. Standard 404 is the cleanest signal until a real listing page lands. The decision is reversible — swap `notFound()` for `redirect(buildLocalePath(locale, '/projects'))` once that page exists.
+
+### 11.5 `<CanvasApp>` not rendered — placeholder shell instead
+
+**Plan:** server-side load → pass `DocumentDto` as prop to `<CanvasApp document={...} />` (`next/dynamic({ ssr: false })`).
+**As-built:** `<ProjectLoadedShell>` placeholder rendering document name, ID, schema version, canvas size, and updated_at + a "Canvas editor coming soon" panel.
+**Reason:** `src/components/canvas/` is empty per CLAUDE.md "post-bootstrap, pre-implementation" state; `<CanvasApp>` doesn't exist yet. Stubbing it would have been a half-finished implementation. The integration seam is documented in `canvas/[id]/page.tsx:79-82` so the swap-in is grep-able.
+
+`DocumentSlice.loadDocument(dto)` (plan step 6) is deferred for the same reason — `useCanvasStore` is still a `_placeholder` (matching the existing `resetUserScoped` no-op pattern).
+
+### 11.6 `PGRST116` mapping lives in `getDocument()`, not `mapPostgrestError`
+
+**Plan step 1 wording:** "Upewnić się, że `mapPostgrestError` mapuje `error.code === 'PGRST116'` na `DOCUMENT_NOT_FOUND`".
+**Plan §5.4 sketch:** maps `PGRST116` inside `getDocument()` itself.
+**As-built:** `PGRST116` mapping lives in `getDocument()` (matches §5.4).
+**Reason:** `PGRST116` is a generic "0 or >1 rows" condition for `.single()` / `.maybeSingle()` — it can occur on any table. Mapping it to the document-specific `DOCUMENT_NOT_FOUND` in the shared `mapPostgrestError` would leak document semantics into other endpoints (e.g. `getUserProfile()` would want `PROFILE_NOT_FOUND`). Endpoint-specific handling is correct. The plan's two sections were internally inconsistent; §5.4 won.
+
+### 11.7 Deferred items (out-of-scope for this PR)
+
+- **`DocumentSlice.loadDocument(dto)`** — picks up alongside the canvas-implementation task when `ShapesSlice`/`HistorySlice`/`CanvasSlice`/`UISlice` land.
+- **`<CanvasApp>` integration** — replace `<ProjectLoadedShell>` once the canvas root component exists.
+- **`documentCodec.migrate()`** — `documentCodec.ts` doesn't exist; plan-level deferral, not introduced by this PR.
+- **Visual regression baseline** (`toHaveScreenshot`) — placeholder shell will change at canvas integration; baseline now would be immediately stale.
+- **Production Sentry hookup for `MappedError.business === UNKNOWN` events** — Sentry is out-of-scope MVP per `init-project-setup-analysis.md` §4.
+
+### 11.8 Files touched
+
+| File | Status |
+| --- | --- |
+| `src/lib/supabase/errors.ts` | added `BusinessError.DOCUMENT_NOT_FOUND` |
+| `src/lib/supabase/documents.ts` | added `getDocument()` + `isCanvasDocument()` |
+| `src/lib/supabase/documents.test.ts` | +8 tests, +`makeSupabaseForGet()` factory |
+| `src/lib/uuid.ts` | new — RFC 4122 validator |
+| `src/lib/uuid.test.ts` | new — 10 tests |
+| `src/messages/{pl,en}.json` | +`errors.document_not_found`, +`errors.invalid_document_id`, +`project.*` namespace |
+| `src/app/[locale]/canvas/[id]/page.tsx` | new Server Component |
+| `e2e/canvas-load.spec.ts` | new — 5 scenarios |

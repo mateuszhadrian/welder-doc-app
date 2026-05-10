@@ -4,6 +4,13 @@
     "tagline": "Welded joint documentation",
     "placeholder": "Application bootstrap in progress — foundation ready."
   },
+  "project": {
+    "editor_pending_title": "Canvas editor coming soon",
+    "editor_pending_message": "Your document was loaded, but the editor UI is not yet wired up.",
+    "back_to_projects": "Back to projects",
+    "load_error_title": "Failed to load project",
+    "retry": "Try again"
+  },
   "auth": {
     "login": {
       "title": "Sign in",
@@ -97,6 +104,8 @@
     "document_payload_too_large": "The project is too large to save.",
     "document_name_invalid": "Project name is invalid.",
     "document_data_shape_invalid": "Project data has an invalid format.",
+    "document_not_found": "Project not found.",
+    "invalid_document_id": "Invalid project identifier.",
     "consent_type_invalid": "Invalid consent type.",
     "consent_version_missing": "Consent version is missing.",
     "consent_target_unauthorized": "You are not authorized to record this consent.",

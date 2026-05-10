@@ -4,6 +4,13 @@
     "tagline": "Dokumentacja złączy spawalniczych",
     "placeholder": "Aplikacja w trakcie bootstrapu — fundament gotowy."
   },
+  "project": {
+    "editor_pending_title": "Edytor canvas w przygotowaniu",
+    "editor_pending_message": "Dokument został wczytany, ale interfejs edytora jeszcze nie jest gotowy.",
+    "back_to_projects": "Wróć do projektów",
+    "load_error_title": "Nie udało się wczytać projektu",
+    "retry": "Spróbuj ponownie"
+  },
   "auth": {
     "login": {
       "title": "Zaloguj się",
@@ -97,6 +104,8 @@
     "document_payload_too_large": "Projekt jest zbyt duży, aby zapisać.",
     "document_name_invalid": "Nazwa projektu jest nieprawidłowa.",
     "document_data_shape_invalid": "Dane projektu mają nieprawidłowy format.",
+    "document_not_found": "Nie znaleziono projektu.",
+    "invalid_document_id": "Nieprawidłowy identyfikator projektu.",
     "consent_type_invalid": "Nieprawidłowy typ zgody.",
     "consent_version_missing": "Brak wersji regulaminu.",
     "consent_target_unauthorized": "Brak uprawnień do zapisu zgody.",

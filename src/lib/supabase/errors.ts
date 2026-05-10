@@ -6,6 +6,7 @@ export enum BusinessError {
   DOCUMENT_PAYLOAD_TOO_LARGE = 'document_payload_too_large',
   DOCUMENT_NAME_INVALID = 'document_name_invalid',
   DOCUMENT_DATA_SHAPE_INVALID = 'document_data_shape_invalid',
+  DOCUMENT_NOT_FOUND = 'document_not_found',
 
   // Consent
   CONSENT_TYPE_INVALID = 'consent_type_invalid',

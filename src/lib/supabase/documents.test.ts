@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AuthError, PostgrestError, SupabaseClient } from '@supabase/supabase-js';
 import type { Database } from '@/types/database';
 import type { CanvasDocument, CreateDocumentCommand } from '@/types/api';
-import { createDocument } from './documents';
+import { createDocument, getDocument } from './documents';
 import { BusinessError } from './errors';
 
 const USER_ID = '11111111-2222-3333-4444-555555555555';
@@ -247,6 +247,156 @@ describe('createDocument — DB error mapping', () => {
 
     expect(result.error?.business).toBe(BusinessError.UNKNOWN);
     expect(result.error?.rawCode).toBe('99999');
+  });
+});
+
+// ============================================================
+// getDocument — fixtures + mocks
+// ============================================================
+
+const DOCUMENT_ID = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
+
+interface GetMockOptions {
+  selectRow?: typeof okRow | null;
+  selectError?: Partial<PostgrestError> | null;
+}
+
+/**
+ * Mock chain for `from('documents').select(cols).eq('id', id).single()`.
+ * Separate from the createDocument factory because the chain shape differs
+ * (no `.insert()` link). Keeping factories distinct avoids shared-state
+ * surprises across describe blocks.
+ */
+function makeSupabaseForGet(opts: GetMockOptions = {}) {
+  const single = vi.fn().mockResolvedValue({
+    data: opts.selectRow ?? null,
+    error: opts.selectError ?? null
+  });
+  const eq = vi.fn(() => ({ single }));
+  const select = vi.fn(() => ({ eq }));
+  const from = vi.fn(() => ({ select }));
+  const client = { from } as unknown as SupabaseClient<Database>;
+  return { client, spies: { from, select, eq, single } };
+}
+
+describe('getDocument — happy path', () => {
+  it('returns a DocumentDto without owner_id or share_token columns', async () => {
+    const { client, spies } = makeSupabaseForGet({ selectRow: okRow });
+    const result = await getDocument(client, DOCUMENT_ID);
+
+    expect(result.error).toBeNull();
+    expect(result.data).toEqual({
+      id: okRow.id,
+      name: okRow.name,
+      schema_version: okRow.schema_version,
+      data: validData,
+      created_at: okRow.created_at,
+      updated_at: okRow.updated_at
+    });
+    expect(result.data).not.toHaveProperty('owner_id');
+    expect(result.data).not.toHaveProperty('share_token');
+
+    expect(spies.from).toHaveBeenCalledWith('documents');
+    expect(spies.select).toHaveBeenCalledWith(
+      'id, name, schema_version, data, created_at, updated_at'
+    );
+    expect(spies.eq).toHaveBeenCalledWith('id', DOCUMENT_ID);
+    expect(spies.single).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('getDocument — DB error mapping', () => {
+  it('maps PGRST116 (0 rows from .single()) to DOCUMENT_NOT_FOUND', async () => {
+    // PGRST116 is returned when RLS rejects the row OR the UUID does not exist.
+    // Both must surface identically — we never leak existence of others' UUIDs.
+    const { client } = makeSupabaseForGet({
+      selectError: {
+        code: 'PGRST116',
+        message: 'JSON object requested, multiple (or no) rows returned',
+        details: '',
+        hint: '',
+        name: 'PostgrestError'
+      }
+    });
+    const result = await getDocument(client, DOCUMENT_ID);
+
+    expect(result.data).toBeNull();
+    expect(result.error?.business).toBe(BusinessError.DOCUMENT_NOT_FOUND);
+    expect(result.error?.message).toBe('errors.document_not_found');
+    expect(result.error?.rawCode).toBe('PGRST116');
+  });
+
+  it('maps PGRST301 (JWT expired) to UNAUTHORIZED', async () => {
+    const { client } = makeSupabaseForGet({
+      selectError: {
+        code: 'PGRST301',
+        message: 'JWT expired',
+        details: '',
+        hint: '',
+        name: 'PostgrestError'
+      }
+    });
+    const result = await getDocument(client, DOCUMENT_ID);
+
+    expect(result.error?.business).toBe(BusinessError.UNAUTHORIZED);
+  });
+
+  it('falls back to UNKNOWN for an unmapped Postgres error (e.g. 22P02 invalid uuid)', async () => {
+    const { client } = makeSupabaseForGet({
+      selectError: {
+        code: '22P02',
+        message: 'invalid input syntax for type uuid',
+        details: '',
+        hint: '',
+        name: 'PostgrestError'
+      }
+    });
+    const result = await getDocument(client, 'not-a-uuid');
+
+    expect(result.error?.business).toBe(BusinessError.UNKNOWN);
+    expect(result.error?.rawCode).toBe('22P02');
+  });
+});
+
+describe('getDocument — data integrity guard', () => {
+  it('rejects a row whose data column is missing schemaVersion as DOCUMENT_DATA_SHAPE_INVALID', async () => {
+    const { client } = makeSupabaseForGet({
+      selectRow: {
+        ...okRow,
+        data: {
+          canvasWidth: 100,
+          canvasHeight: 100,
+          shapes: [],
+          weldUnits: []
+        } as unknown as CanvasDocument
+      }
+    });
+    const result = await getDocument(client, DOCUMENT_ID);
+
+    expect(result.data).toBeNull();
+    expect(result.error?.business).toBe(BusinessError.DOCUMENT_DATA_SHAPE_INVALID);
+    expect(result.error?.message).toBe('errors.document_data_shape_invalid');
+  });
+
+  it('rejects a row whose data column is null as DOCUMENT_DATA_SHAPE_INVALID', async () => {
+    const { client } = makeSupabaseForGet({
+      selectRow: { ...okRow, data: null as unknown as CanvasDocument }
+    });
+    const result = await getDocument(client, DOCUMENT_ID);
+
+    expect(result.error?.business).toBe(BusinessError.DOCUMENT_DATA_SHAPE_INVALID);
+  });
+
+  it('rejects a row with non-array shapes as DOCUMENT_DATA_SHAPE_INVALID', async () => {
+    const { client } = makeSupabaseForGet({
+      selectRow: {
+        ...okRow,
+        data: { ...validData, shapes: 'oops' } as unknown as CanvasDocument
+      }
+    });
+    const result = await getDocument(client, DOCUMENT_ID);
+
+    expect(result.error?.business).toBe(BusinessError.DOCUMENT_DATA_SHAPE_INVALID);
   });
 });
 
