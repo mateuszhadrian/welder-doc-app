@@ -119,7 +119,10 @@
     "guest_migration_failed": "We couldn't migrate your guest project."
   },
   "documents": {
-    "untitled_default": "My first project"
+    "untitled_default": "My first project",
+    "default_name": "New project",
+    "create_new": "New project",
+    "creating": "Creating…"
   },
   "account": {
     "password_updated": "Password updated successfully.",

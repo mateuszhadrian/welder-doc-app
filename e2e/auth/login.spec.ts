@@ -83,7 +83,7 @@ test.describe('Login flow', () => {
     await page.getByRole('button', { name: 'Zaloguj się' }).click();
 
     await page.waitForURL((url) => url.pathname === '/consent-required');
-    await expect(page.getByRole('heading', { name: 'Wymagana zgoda' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Zaktualizuj swoje zgody' })).toBeVisible();
   });
 
   test('guest migration: localStorage.welderdoc_autosave → toast.success', async ({ page }) => {

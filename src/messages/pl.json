@@ -119,7 +119,10 @@
     "guest_migration_failed": "Nie udało się przenieść projektu z trybu gościa."
   },
   "documents": {
-    "untitled_default": "Mój pierwszy projekt"
+    "untitled_default": "Mój pierwszy projekt",
+    "default_name": "Nowy projekt",
+    "create_new": "Nowy projekt",
+    "creating": "Tworzenie…"
   },
   "account": {
     "password_updated": "Hasło zostało zmienione.",
