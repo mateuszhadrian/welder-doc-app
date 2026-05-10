@@ -9,7 +9,14 @@
     "editor_pending_message": "Dokument został wczytany, ale interfejs edytora jeszcze nie jest gotowy.",
     "back_to_projects": "Wróć do projektów",
     "load_error_title": "Nie udało się wczytać projektu",
-    "retry": "Spróbuj ponownie"
+    "retry": "Spróbuj ponownie",
+    "rename": {
+      "action": "Zmień nazwę",
+      "label": "Nazwa projektu",
+      "save": "Zapisz",
+      "saving": "Zapisywanie…",
+      "cancel": "Anuluj"
+    }
   },
   "auth": {
     "login": {

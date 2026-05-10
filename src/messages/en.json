@@ -9,7 +9,14 @@
     "editor_pending_message": "Your document was loaded, but the editor UI is not yet wired up.",
     "back_to_projects": "Back to projects",
     "load_error_title": "Failed to load project",
-    "retry": "Try again"
+    "retry": "Try again",
+    "rename": {
+      "action": "Rename",
+      "label": "Project name",
+      "save": "Save",
+      "saving": "Saving…",
+      "cancel": "Cancel"
+    }
   },
   "auth": {
     "login": {

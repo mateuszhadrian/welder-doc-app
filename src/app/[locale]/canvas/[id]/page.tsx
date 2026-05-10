@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/server';
 import { getDocument } from '@/lib/supabase/documents';
 import { BusinessError } from '@/lib/supabase/errors';
 import { isUuid } from '@/lib/uuid';
+import { RenameDocumentForm } from './RenameDocumentForm';
 
 type Props = {
   params: Promise<{ locale: string; id: string }>;
@@ -122,7 +123,7 @@ async function ProjectLoadedShell({
         <a href={backHref} className="text-sm text-neutral-600 hover:text-neutral-900">
           ← {t('back_to_projects')}
         </a>
-        <h1 className="mt-4 text-2xl font-semibold text-neutral-900">{document.name}</h1>
+        <RenameDocumentForm documentId={document.id} initialName={document.name} />
         <dl className="mt-4 grid grid-cols-2 gap-x-6 gap-y-2 text-sm text-neutral-600">
           <dt className="font-medium text-neutral-700">ID</dt>
           <dd className="font-mono">{document.id}</dd>

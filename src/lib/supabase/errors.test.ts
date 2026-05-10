@@ -41,6 +41,42 @@ describe('mapPostgrestError', () => {
     expect(m?.business).toBe(BusinessError.DOCUMENT_DATA_SHAPE_INVALID);
   });
 
+  // Real Postgres CHECK violations do NOT carry the expression text in the
+  // message — only the auto-generated constraint name (`documents_data_check`,
+  // `documents_data_check1`, `documents_name_check`). These fixtures use the
+  // exact message format observed against the deployed schema.
+  it('mapuje realny 23514 documents_data_check1 (size) → DOCUMENT_PAYLOAD_TOO_LARGE', () => {
+    const m = mapPostgrestError(
+      pgErr(
+        '23514',
+        'new row for relation "documents" violates check constraint "documents_data_check1"'
+      )
+    );
+    expect(m?.business).toBe(BusinessError.DOCUMENT_PAYLOAD_TOO_LARGE);
+  });
+
+  it('mapuje realny 23514 documents_data_check (shape) → DOCUMENT_DATA_SHAPE_INVALID', () => {
+    // Note: `documents_data_check` is a strict prefix of `documents_data_check1`,
+    // so the size matcher must run first. This test guards that ordering.
+    const m = mapPostgrestError(
+      pgErr(
+        '23514',
+        'new row for relation "documents" violates check constraint "documents_data_check"'
+      )
+    );
+    expect(m?.business).toBe(BusinessError.DOCUMENT_DATA_SHAPE_INVALID);
+  });
+
+  it('mapuje realny 23514 documents_name_check → DOCUMENT_NAME_INVALID', () => {
+    const m = mapPostgrestError(
+      pgErr(
+        '23514',
+        'new row for relation "documents" violates check constraint "documents_name_check"'
+      )
+    );
+    expect(m?.business).toBe(BusinessError.DOCUMENT_NAME_INVALID);
+  });
+
   it('mapuje 23514 locale → PROFILE_LOCALE_INVALID', () => {
     const m = mapPostgrestError(pgErr('23514', "locale IN ('pl','en')"));
     expect(m?.business).toBe(BusinessError.PROFILE_LOCALE_INVALID);

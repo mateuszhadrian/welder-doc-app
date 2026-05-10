@@ -4,7 +4,10 @@ import type {
   CanvasDocument,
   CreateDocumentCommand,
   DocumentDto,
-  DocumentListItemDto
+  DocumentListItemDto,
+  RenameDocumentCommand,
+  ResizeCanvasCommand,
+  SaveDocumentDataCommand
 } from '@/types/api';
 import { BusinessError, mapPostgrestError, type MappedError } from './errors';
 
@@ -13,6 +16,7 @@ const MAX_PAYLOAD_BYTES = 5 * 1024 * 1024;
 
 const SELECT_COLUMNS = 'id, name, schema_version, data, created_at, updated_at' as const;
 const LIST_SELECT_COLUMNS = 'id, name, created_at, updated_at' as const;
+const AUTOSAVE_SELECT_COLUMNS = 'id, name, updated_at' as const;
 
 const DEFAULT_LIST_LIMIT = 50;
 const MIN_LIST_LIMIT = 1;
@@ -334,4 +338,330 @@ function clampListOffset(raw: number | undefined): number {
     throw new RangeError(`listDocuments: offset must be an integer >= 0, got ${raw}`);
   }
   return raw;
+}
+
+// ============================================================
+// renameDocument — US-013 (PATCH /rest/v1/documents)
+// ============================================================
+
+export type UpdateDocumentResult =
+  | { data: DocumentDto; error: null }
+  | { data: null; error: MappedError };
+
+/**
+ * Rename a document (US-013).
+ *
+ * Authorisation lives in the database, not here:
+ *   - RLS USING + WITH CHECK enforce `owner_id = auth.uid()` AND email confirmed
+ *     via the `public.user_email_confirmed()` SECURITY DEFINER helper.
+ *   - DB CHECK `length(trim(name)) > 0 AND length(name) <= 100` is the
+ *     authoritative validator; the preflight below only spares the round-trip.
+ *
+ * The PGRST116 → DOCUMENT_NOT_FOUND mapping is inlined here (rather than in the
+ * generic `mapPostgrestError`) because PGRST116 means different things in
+ * different endpoint contexts. For PATCH it means either "id not in `documents`"
+ * or "RLS denied" — both surface identically; existence of other users' rows is
+ * never leaked.
+ */
+export async function renameDocument(
+  supabase: SupabaseClient<Database>,
+  documentId: string,
+  command: RenameDocumentCommand
+): Promise<UpdateDocumentResult> {
+  const trimmedName = command.name.trim();
+  if (trimmedName.length === 0 || trimmedName.length > MAX_NAME_LENGTH) {
+    return {
+      data: null,
+      error: {
+        business: BusinessError.DOCUMENT_NAME_INVALID,
+        message: 'errors.document_name_invalid'
+      }
+    };
+  }
+
+  const { data, error } = await supabase
+    .from('documents')
+    .update({ name: trimmedName })
+    .eq('id', documentId)
+    .select(SELECT_COLUMNS)
+    .single();
+
+  if (error) {
+    if (error.code === 'PGRST116') {
+      return {
+        data: null,
+        error: {
+          business: BusinessError.DOCUMENT_NOT_FOUND,
+          message: 'errors.document_not_found',
+          rawCode: error.code
+        }
+      };
+    }
+    const mapped = mapPostgrestError(error) ?? {
+      business: BusinessError.UNKNOWN,
+      message: 'errors.unknown',
+      rawCode: error.code,
+      rawMessage: error.message
+    };
+    return { data: null, error: mapped };
+  }
+
+  if (!isCanvasDocument(data.data)) {
+    return {
+      data: null,
+      error: {
+        business: BusinessError.DOCUMENT_DATA_SHAPE_INVALID,
+        message: 'errors.document_data_shape_invalid'
+      }
+    };
+  }
+
+  return {
+    data: {
+      id: data.id,
+      name: data.name,
+      schema_version: data.schema_version,
+      data: data.data,
+      created_at: data.created_at,
+      updated_at: data.updated_at
+    },
+    error: null
+  };
+}
+
+// ============================================================
+// saveDocumentData — US-009 autosave (PATCH /rest/v1/documents)
+// ============================================================
+
+/**
+ * Lightweight projection returned by `saveDocumentData`. The 5 MB `data` blob
+ * is intentionally NOT round-tripped on autosave — only the bits the UI needs
+ * for the "saved at HH:MM" indicator (api-plan.md, plan §4.1).
+ */
+export type SavedDocumentDto = Pick<DocumentDto, 'id' | 'name' | 'updated_at'>;
+
+export type SaveDocumentDataResult =
+  | { data: SavedDocumentDto; error: null }
+  | { data: null; error: MappedError };
+
+/**
+ * Persist the canvas scene (US-009 autosave).
+ *
+ * Debounce, localStorage fallback, and exponential backoff are NOT this
+ * helper's responsibility — they belong to the React hook / slice consuming
+ * this function. Keeping the helper pure makes it trivially mockable in unit
+ * tests and reusable from Server Actions.
+ *
+ * The DB trigger `documents_before_iu_sync_schema_version` synchronises
+ * `documents.schema_version` from `data->schemaVersion` on every UPDATE — that
+ * is why we never PATCH `schema_version` directly. The CHECK on
+ * `octet_length(data::text)` is the authoritative 5 MB cap; the preflight here
+ * mirrors it purely to spare the network round-trip on obviously huge payloads.
+ */
+export async function saveDocumentData(
+  supabase: SupabaseClient<Database>,
+  documentId: string,
+  command: SaveDocumentDataCommand
+): Promise<SaveDocumentDataResult> {
+  if (!isCanvasDocument(command.data)) {
+    return {
+      data: null,
+      error: {
+        business: BusinessError.DOCUMENT_DATA_SHAPE_INVALID,
+        message: 'errors.document_data_shape_invalid'
+      }
+    };
+  }
+
+  const serialized = JSON.stringify(command.data);
+  if (serialized.length >= MAX_PAYLOAD_BYTES) {
+    return {
+      data: null,
+      error: {
+        business: BusinessError.DOCUMENT_PAYLOAD_TOO_LARGE,
+        message: 'errors.document_payload_too_large'
+      }
+    };
+  }
+
+  const { data, error } = await supabase
+    .from('documents')
+    .update({ data: command.data as unknown as Json })
+    .eq('id', documentId)
+    .select(AUTOSAVE_SELECT_COLUMNS)
+    .single();
+
+  if (error) {
+    if (error.code === 'PGRST116') {
+      return {
+        data: null,
+        error: {
+          business: BusinessError.DOCUMENT_NOT_FOUND,
+          message: 'errors.document_not_found',
+          rawCode: error.code
+        }
+      };
+    }
+    const mapped = mapPostgrestError(error) ?? {
+      business: BusinessError.UNKNOWN,
+      message: 'errors.unknown',
+      rawCode: error.code,
+      rawMessage: error.message
+    };
+    return { data: null, error: mapped };
+  }
+
+  return {
+    data: {
+      id: data.id,
+      name: data.name,
+      updated_at: data.updated_at
+    },
+    error: null
+  };
+}
+
+// ============================================================
+// resizeCanvas — US-014 (PATCH /rest/v1/documents, 3-step RMW)
+// ============================================================
+
+/**
+ * Resize the canvas (US-014).
+ *
+ * Three-step read-modify-write: PostgREST cannot atomically merge JSONB, so we
+ * SELECT the current `data` blob, splice in the new dimensions, then UPDATE.
+ *
+ * Race window between the read and the write is accepted for MVP per
+ * `architecture-base.md` (single-tab dominant). Post-MVP optimistic concurrency
+ * (`.eq('updated_at', expectedUpdatedAt)` on the write) is tracked in backlog
+ * and intentionally NOT implemented here. The caller (slice/hook) is expected
+ * to block autosave for the duration of resize so concurrent writes from the
+ * same tab don't fight this sequence.
+ */
+export async function resizeCanvas(
+  supabase: SupabaseClient<Database>,
+  documentId: string,
+  command: ResizeCanvasCommand
+): Promise<UpdateDocumentResult> {
+  if (
+    !Number.isFinite(command.canvasWidth) ||
+    !Number.isFinite(command.canvasHeight) ||
+    command.canvasWidth <= 0 ||
+    command.canvasHeight <= 0
+  ) {
+    return {
+      data: null,
+      error: {
+        business: BusinessError.DOCUMENT_DATA_SHAPE_INVALID,
+        message: 'errors.document_data_shape_invalid'
+      }
+    };
+  }
+
+  const { data: currentRow, error: readError } = await supabase
+    .from('documents')
+    .select('data')
+    .eq('id', documentId)
+    .single();
+
+  if (readError) {
+    if (readError.code === 'PGRST116') {
+      return {
+        data: null,
+        error: {
+          business: BusinessError.DOCUMENT_NOT_FOUND,
+          message: 'errors.document_not_found',
+          rawCode: readError.code
+        }
+      };
+    }
+    const mapped = mapPostgrestError(readError) ?? {
+      business: BusinessError.UNKNOWN,
+      message: 'errors.unknown',
+      rawCode: readError.code,
+      rawMessage: readError.message
+    };
+    return { data: null, error: mapped };
+  }
+
+  if (!isCanvasDocument(currentRow.data)) {
+    return {
+      data: null,
+      error: {
+        business: BusinessError.DOCUMENT_DATA_SHAPE_INVALID,
+        message: 'errors.document_data_shape_invalid'
+      }
+    };
+  }
+
+  // Bind to a typed local — `Json` narrowed by isCanvasDocument is still
+  // `Json & CanvasDocument`, which TS refuses to spread because Json includes
+  // primitives. The explicit alias drops the Json branch.
+  const currentScene: CanvasDocument = currentRow.data;
+  const merged: CanvasDocument = {
+    ...currentScene,
+    canvasWidth: command.canvasWidth,
+    canvasHeight: command.canvasHeight
+  };
+
+  // Re-check size: a legitimately near-cap document plus the dimension diff
+  // could push us over after the merge. Authoritative cap is the DB CHECK.
+  if (JSON.stringify(merged).length >= MAX_PAYLOAD_BYTES) {
+    return {
+      data: null,
+      error: {
+        business: BusinessError.DOCUMENT_PAYLOAD_TOO_LARGE,
+        message: 'errors.document_payload_too_large'
+      }
+    };
+  }
+
+  const { data: updatedRow, error: writeError } = await supabase
+    .from('documents')
+    .update({ data: merged as unknown as Json })
+    .eq('id', documentId)
+    .select(SELECT_COLUMNS)
+    .single();
+
+  if (writeError) {
+    if (writeError.code === 'PGRST116') {
+      return {
+        data: null,
+        error: {
+          business: BusinessError.DOCUMENT_NOT_FOUND,
+          message: 'errors.document_not_found',
+          rawCode: writeError.code
+        }
+      };
+    }
+    const mapped = mapPostgrestError(writeError) ?? {
+      business: BusinessError.UNKNOWN,
+      message: 'errors.unknown',
+      rawCode: writeError.code,
+      rawMessage: writeError.message
+    };
+    return { data: null, error: mapped };
+  }
+
+  if (!isCanvasDocument(updatedRow.data)) {
+    return {
+      data: null,
+      error: {
+        business: BusinessError.DOCUMENT_DATA_SHAPE_INVALID,
+        message: 'errors.document_data_shape_invalid'
+      }
+    };
+  }
+
+  return {
+    data: {
+      id: updatedRow.id,
+      name: updatedRow.name,
+      schema_version: updatedRow.schema_version,
+      data: updatedRow.data,
+      created_at: updatedRow.created_at,
+      updated_at: updatedRow.updated_at
+    },
+    error: null
+  };
 }

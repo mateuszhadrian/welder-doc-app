@@ -74,22 +74,51 @@ export function mapPostgrestError(err: PostgrestError | null): MappedError | nul
   }
 
   // 23514 = check_violation (CHECK constraint).
+  //
+  // Postgres' default error message is:
+  //   `new row for relation "documents" violates check constraint "<name>"`
+  // and does NOT include the constraint expression text — so matching on
+  // `octet_length` / `jsonb_typeof` / `length(trim(name))` alone never fires
+  // against real Postgres output. We match on the auto-generated constraint
+  // *names* (durable as long as the original migration isn't reordered) and
+  // keep the expression-text matchers as a fallback for synthetic test
+  // fixtures and for any future explicitly-named constraints.
+  //
+  // Ordering is load-bearing: `documents_data_check1` (size) shares the
+  // prefix `documents_data_check` (typeof), so the more-specific name MUST
+  // be checked first.
+  //
+  // Backlog: a follow-up migration should assign explicit constraint names
+  // (`documents_data_size_check`, `documents_data_shape_check`,
+  // `documents_name_check`) so this mapping isn't migration-order-fragile.
   if (err.code === '23514') {
-    if (err.message.includes('octet_length')) {
+    if (
+      err.message.includes('documents_data_check1') ||
+      err.message.includes('documents_data_size_check') ||
+      err.message.includes('octet_length')
+    ) {
       return {
         business: BusinessError.DOCUMENT_PAYLOAD_TOO_LARGE,
         message: 'errors.document_payload_too_large',
         rawCode: err.code
       };
     }
-    if (err.message.includes('length(trim(name))') || err.message.includes('length(name)')) {
+    if (
+      err.message.includes('documents_name_check') ||
+      err.message.includes('length(trim(name))') ||
+      err.message.includes('length(name)')
+    ) {
       return {
         business: BusinessError.DOCUMENT_NAME_INVALID,
         message: 'errors.document_name_invalid',
         rawCode: err.code
       };
     }
-    if (err.message.includes('jsonb_typeof')) {
+    if (
+      err.message.includes('documents_data_check') ||
+      err.message.includes('documents_data_shape_check') ||
+      err.message.includes('jsonb_typeof')
+    ) {
       return {
         business: BusinessError.DOCUMENT_DATA_SHAPE_INVALID,
         message: 'errors.document_data_shape_invalid',
