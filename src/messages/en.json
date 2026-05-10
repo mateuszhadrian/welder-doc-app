@@ -69,6 +69,14 @@
       "password_confirm_placeholder": "Repeat password",
       "submit": "Save new password",
       "submitting": "Saving…"
+    },
+    "consent": {
+      "required_title": "Update your consents",
+      "required_subtitle": "To continue, please accept the updated terms of service and privacy policy (version {version}).",
+      "tos_label": "I accept the Terms of Service",
+      "pp_label": "I accept the Privacy Policy",
+      "submit": "Accept and continue",
+      "submitting": "Saving…"
     }
   },
   "errors": {
@@ -112,11 +120,6 @@
   },
   "documents": {
     "untitled_default": "My first project"
-  },
-  "consent": {
-    "required_title": "Consent required",
-    "required_subtitle": "To continue, please accept the updated Terms of Service and Privacy Policy.",
-    "stub_notice": "The full consent form will be wired up in a follow-up task (POST /api/consent)."
   },
   "account": {
     "password_updated": "Password updated successfully.",

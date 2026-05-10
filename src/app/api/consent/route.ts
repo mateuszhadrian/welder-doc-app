@@ -14,6 +14,11 @@ import { NextResponse } from 'next/server';
 // Kontrakt: `api-plan.md` §2.1 (`POST /api/consent`).
 // - Bundle (`types: [...]`) atomowo przez RPC `record_consent_bundle()`
 //   (`SECURITY DEFINER`, migracja `20260508000000_record_consent_bundle.sql`).
+//   UWAGA: obecna wersja RPC IGNORUJE listę `types` z payloadu i zawsze
+//   inserts wszystkie 3 typy (TOS+PP+cookies). Endpoint nadal waliduje
+//   `types` jako defense-in-depth (i pod kątem przyszłej migracji RPC).
+//   Wykryte 2026-05-10 podczas weryfikacji US-052 — follow-up tracked
+//   w `.ai/release-checklist.md` sekcja Bezpieczeństwo/RODO.
 // - Per-type (`consent_type: ...`) — pojedynczy INSERT przez sesję + RLS.
 // IP anonimizowane przed zapisem (RODO motyw 30) przez `src/lib/ipAnonymize.ts`.
 // Idempotency-Key (UUID v4) — in-memory cache TTL 60 s, klucz `user.id:key`.

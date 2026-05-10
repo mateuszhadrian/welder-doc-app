@@ -53,7 +53,9 @@ export type RegisterUserResult =
       error: MappedError;
     };
 
-export type FlushPendingConsentResult = { ok: true } | { ok: false; reason: string };
+export type FlushPendingConsentResult =
+  | { ok: true; flushed: boolean }
+  | { ok: false; reason: string };
 
 export const PENDING_CONSENT_KEY = 'welderdoc_pending_consent';
 
@@ -186,7 +188,10 @@ export async function flushPendingConsent(): Promise<FlushPendingConsentResult> 
   }
 
   if (raw === null) {
-    return { ok: true };
+    // No-op: nothing was pending. Distinguishing this from a real flush
+    // matters for AuthProvider, which only auto-redirects off
+    // /consent-required when an actual flush updated current_consent_version.
+    return { ok: true, flushed: false };
   }
 
   let body: PendingConsentPayload;
@@ -222,5 +227,5 @@ export async function flushPendingConsent(): Promise<FlushPendingConsentResult> 
   } catch {
     // ignore
   }
-  return { ok: true };
+  return { ok: true, flushed: true };
 }

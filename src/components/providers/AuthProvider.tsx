@@ -51,6 +51,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           // session is live, drop them to limit the password's exposure
           // window.
           clearPendingSignupCredentials();
+
+          // Close the SSR-vs-client-flush race (US-052 plan §2): ONLY when
+          // an actual flush happened (i.e., a fresh signup just confirmed
+          // and the deferred consent bundle posted successfully). Without
+          // the `flushed` guard this would also fire on every subsequent
+          // sign-in (no-op flush) and kick the user off /consent-required
+          // before they could re-accept an updated TOS.
+          if (!result.flushed) return;
+          if (typeof window === 'undefined') return;
+          const stripped = window.location.pathname.replace(/^\/(en|pl)(?=\/|$)/, '');
+          if (stripped === '/consent-required' || stripped.startsWith('/consent-required/')) {
+            router.replace(`/${locale}`);
+          }
         });
       }
     });

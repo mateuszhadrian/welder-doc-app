@@ -1079,6 +1079,27 @@ Kryteria akceptacji:
 - Linki do Polityki Prywatności i Regulaminu są dostępne w stopce i przy rejestracji.
 - Checkbox zgody przy rejestracji jest obowiązkowy.
 
+US-052
+Tytuł: Ponowna akceptacja zgód po zmianie wersji TOS / Polityki Prywatności
+
+Opis: Jako użytkownik z aktywnym kontem chcę móc ponownie zaakceptować zaktualizowane zgody (Regulamin, Polityka Prywatności), kiedy ich wersje uległy zmianie, aby móc dalej korzystać z aplikacji zgodnie z aktualnymi warunkami.
+
+Kryteria akceptacji:
+
+- Po zalogowaniu LocaleGuard sprawdza `user_profiles.current_consent_version`. Jeśli `NULL` lub mniejsze od `CURRENT_TOS_VERSION`, użytkownik zostaje przekierowany na `/[locale]/consent-required`.
+- Strona `/[locale]/consent-required` wyświetla:
+  - tytuł i wyjaśnienie powodu re-akceptacji (nowa wersja TOS / PP),
+  - listę dwóch checkboxów (Regulamin, Polityka Prywatności),
+  - informację o aktualnej wersji zgód (np. „Wersja 2026-09-01"),
+  - przycisk „Akceptuję i kontynuuj" — disabled dopóki oba checkboxy nie są zaznaczone.
+- Submit wywołuje istniejący `POST /api/consent` z payloadem `{ types: ['terms_of_service', 'privacy_policy'], version: CURRENT_TOS_VERSION, accepted: true }`.
+- Po sukcesie HTTP `201`: redirect na `/[locale]` (home). LocaleGuard przepuszcza, bo `current_consent_version` jest aktualne.
+- Obsługa błędów: 4xx/5xx → komunikat z envelope `{ error }` zmapowany na i18n key (`errors.<code>`), button znów enabled, formularz nie jest czyszczony.
+- Strona obsługuje obie locale (PL/EN) przez `next-intl` (`auth.consent.*` namespace).
+- Re-check po stronie serwera: jeśli użytkownik trafi na `/consent-required` mając już aktualne `current_consent_version`, server component wykonuje natychmiastowy `redirect()` na home (chroni przed pętlą po race condition w `AuthProvider`).
+- Auto-redirect po stronie klienta: po sukcesie `flushPendingConsent()` w `AuthProvider`, jeśli pathname zawiera `/consent-required`, wykonaj `router.replace` na home (zamyka okno race condition po świeżej rejestracji).
+- Nie pokazujemy checkboxa cookies — cookies-banner ma własny flow (US-051).
+
 ---
 
 ## 6. Metryki sukcesu

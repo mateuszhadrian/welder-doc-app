@@ -69,6 +69,14 @@
       "password_confirm_placeholder": "Powtórz hasło",
       "submit": "Zapisz nowe hasło",
       "submitting": "Zapisywanie…"
+    },
+    "consent": {
+      "required_title": "Zaktualizuj swoje zgody",
+      "required_subtitle": "Aby kontynuować, zaakceptuj nową wersję regulaminu i polityki prywatności (wersja {version}).",
+      "tos_label": "Akceptuję Regulamin",
+      "pp_label": "Akceptuję Politykę Prywatności",
+      "submit": "Akceptuję i kontynuuj",
+      "submitting": "Zapisywanie…"
     }
   },
   "errors": {
@@ -112,11 +120,6 @@
   },
   "documents": {
     "untitled_default": "Mój pierwszy projekt"
-  },
-  "consent": {
-    "required_title": "Wymagana zgoda",
-    "required_subtitle": "Aby kontynuować, zaakceptuj zaktualizowany Regulamin i Politykę Prywatności.",
-    "stub_notice": "Pełny formularz zgód zostanie podłączony w kolejnym zadaniu (POST /api/consent)."
   },
   "account": {
     "password_updated": "Hasło zostało zmienione.",

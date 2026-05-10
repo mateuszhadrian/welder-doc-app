@@ -52,6 +52,8 @@ Jeśli dodajesz nowy punkt: zostaw zwięzły opis (1–2 linijki), powiązanie z
 
 - [ ] **TOS i Privacy Policy** opublikowane pod stałymi URL-ami.
 - [ ] **`CURRENT_TOS_VERSION`** w `src/lib/consent/version.ts` zaktualizowany na bieżącą datę publikacji TOS (`YYYY-MM-DD`).
+- [ ] **US-052 — consent re-acceptance UI** zaimplementowane (`/[locale]/consent-required` form + AuthProvider auto-redirect), Vitest i Playwright zielone. Bez tego flow rejestracji w prod (z `enable_confirmations=true`) skutkuje „uwięzieniem" usera na stronie `/consent-required`, a każdy bump `CURRENT_TOS_VERSION` blokuje istniejących userów (RODO art. 7).
+- [ ] **Follow-up: rozważyć refactor `record_consent_bundle` RPC** (`supabase/migrations/20260508000000_record_consent_bundle.sql:52-58`). RPC ma hardcoded INSERT trzech typów (TOS+PP+cookies) i ignoruje listę `types` z payloadu `/api/consent`. Wykryte podczas weryfikacji US-052 (2026-05-10) — re-acceptance wysyła TOS+PP, ale RPC dopisuje też cookies. Brak naruszenia RODO (wszystkie `accepted=true`), ale UX-mismatch z planem US-052 (cookies powinny iść tylko przez banner). Fix: migracja `record_consent_bundle_v2(p_types text[], ...)` z dynamicznym INSERTem `unnest(p_types)` + update endpointu i sygnatury RPC. NIE blokuje pierwszego deploya — debt do MVP+1.
 - [ ] **DPA z Supabase** podpisana (Supabase dashboard → Settings → Compliance).
 - [ ] **DPA z Paddle** podpisana.
 - [ ] **DPA z dostawcą SMTP** (Resend / Postmark) podpisana.

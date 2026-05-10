@@ -202,13 +202,13 @@ describe('flushPendingConsent', () => {
     vi.restoreAllMocks();
   });
 
-  it('zwraca ok=true bez fetch gdy brak payloadu w sessionStorage', async () => {
+  it('zwraca ok=true, flushed=false bez fetch gdy brak payloadu w sessionStorage', async () => {
     const fetchSpy = vi.fn();
     globalThis.fetch = fetchSpy as unknown as typeof fetch;
 
     const result = await flushPendingConsent();
 
-    expect(result).toEqual({ ok: true });
+    expect(result).toEqual({ ok: true, flushed: false });
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
@@ -227,7 +227,7 @@ describe('flushPendingConsent', () => {
 
     const result = await flushPendingConsent();
 
-    expect(result).toEqual({ ok: true });
+    expect(result).toEqual({ ok: true, flushed: true });
     expect(fetchSpy).toHaveBeenCalledTimes(1);
     const [url, init] = fetchSpy.mock.calls[0]!;
     expect(url).toBe('/api/consent');
