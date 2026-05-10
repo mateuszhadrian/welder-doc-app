@@ -10,8 +10,11 @@ export function generateStaticParams() {
 }
 
 // Stub destination for the LocaleGuard consent-version redirect (architecture-base.md §17).
-// Full UI (TOS + PP checkboxes wired to POST /api/consent) is out-of-scope for the
-// login PR — tracked separately. The route exists so the guard has a valid target.
+// Full UI (TOS + PP checkboxes wired to POST /api/consent) is OPEN —
+// tracked as US-052 in .ai/prd.md (to be added) with full implementation plan at
+// .ai/consent-required-page-implementation-plan.md. P0 for MVP launch (RODO
+// art. 7 — without this UI, the consent re-acceptance flow is broken end-to-end:
+// users get trapped on this page after fresh signup OR after a TOS version bump).
 export default async function ConsentRequiredPage({ params }: Props) {
   const { locale } = await params;
   setRequestLocale(locale);
