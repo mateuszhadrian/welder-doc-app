@@ -88,11 +88,7 @@ export function LoginForm({ locale }: Props) {
     }
 
     if (data.user) {
-      const migration = await migrateGuestAutosave(
-        supabase,
-        data.user.id,
-        tDocuments('untitled_default')
-      );
+      const migration = await migrateGuestAutosave(supabase, tDocuments('untitled_default'));
       if (migration.migrated) {
         toast.success(tToasts('guest_migrated'));
       } else if (migration.reason === 'project_limit') {

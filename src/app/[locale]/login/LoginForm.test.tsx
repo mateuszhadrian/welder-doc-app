@@ -144,7 +144,6 @@ describe('LoginForm', () => {
     await waitFor(() => expect(locationAssignMock).toHaveBeenCalledWith('/'));
     expect(migrateMock).toHaveBeenCalledWith(
       expect.anything(),
-      'user-1',
       plMessages.documents.untitled_default
     );
     expect(toastMock.success).toHaveBeenCalledWith(plMessages.toasts.guest_migrated);

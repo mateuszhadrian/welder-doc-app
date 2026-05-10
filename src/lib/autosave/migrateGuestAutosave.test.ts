@@ -1,6 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Database } from '@/types/database';
+import { BusinessError } from '@/lib/supabase/errors';
+
+const { createDocumentMock } = vi.hoisted(() => ({ createDocumentMock: vi.fn() }));
+
+vi.mock('@/lib/supabase/documents', () => ({
+  createDocument: createDocumentMock
+}));
+
 import { migrateGuestAutosave } from './migrateGuestAutosave';
 
 const AUTOSAVE_KEY = 'welderdoc_autosave';
@@ -16,56 +24,58 @@ const validScene = {
 
 const validPayload = JSON.stringify({ schemaVersion: 1, scene: validScene });
 
-function makeSupabaseInsert(insertResult: { error: unknown }) {
-  const insert = vi.fn().mockResolvedValue(insertResult);
-  return {
-    client: { from: vi.fn().mockReturnValue({ insert }) } as unknown as SupabaseClient<Database>,
-    insert
-  };
-}
+const stubClient = {} as unknown as SupabaseClient<Database>;
+
+beforeEach(() => {
+  window.localStorage.clear();
+  createDocumentMock.mockReset();
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 describe('migrateGuestAutosave', () => {
-  beforeEach(() => {
-    window.localStorage.clear();
-  });
-
-  afterEach(() => {
-    vi.restoreAllMocks();
-  });
-
   it('zwraca no_autosave gdy localStorage pusty', async () => {
-    const { client, insert } = makeSupabaseInsert({ error: null });
-    const result = await migrateGuestAutosave(client, 'user-1', 'Untitled');
+    const result = await migrateGuestAutosave(stubClient, 'Untitled');
     expect(result).toEqual({ migrated: false, reason: 'no_autosave' });
-    expect(insert).not.toHaveBeenCalled();
+    expect(createDocumentMock).not.toHaveBeenCalled();
   });
 
   it('zwraca invalid_payload i czyści klucz przy zepsutym JSON', async () => {
     window.localStorage.setItem(AUTOSAVE_KEY, '{not-valid-json');
-    const { client, insert } = makeSupabaseInsert({ error: null });
-    const result = await migrateGuestAutosave(client, 'user-1', 'Untitled');
+    const result = await migrateGuestAutosave(stubClient, 'Untitled');
     expect(result).toEqual({ migrated: false, reason: 'invalid_payload' });
     expect(window.localStorage.getItem(AUTOSAVE_KEY)).toBeNull();
-    expect(insert).not.toHaveBeenCalled();
+    expect(createDocumentMock).not.toHaveBeenCalled();
   });
 
   it('zwraca invalid_payload gdy brak pola scene', async () => {
     window.localStorage.setItem(AUTOSAVE_KEY, JSON.stringify({ schemaVersion: 1 }));
-    const { client, insert } = makeSupabaseInsert({ error: null });
-    const result = await migrateGuestAutosave(client, 'user-1', 'Untitled');
+    const result = await migrateGuestAutosave(stubClient, 'Untitled');
     expect(result).toEqual({ migrated: false, reason: 'invalid_payload' });
     expect(window.localStorage.getItem(AUTOSAVE_KEY)).toBeNull();
-    expect(insert).not.toHaveBeenCalled();
+    expect(createDocumentMock).not.toHaveBeenCalled();
   });
 
-  it('migruje scenę: INSERT, ustawia sentinel, usuwa autosave', async () => {
+  it('migruje scenę: woła createDocument, ustawia sentinel, usuwa autosave', async () => {
     window.localStorage.setItem(AUTOSAVE_KEY, validPayload);
-    const { client, insert } = makeSupabaseInsert({ error: null });
-    const result = await migrateGuestAutosave(client, 'user-1', 'Migrated project');
+    createDocumentMock.mockResolvedValue({
+      data: {
+        id: 'doc-1',
+        name: 'Migrated project',
+        schema_version: 1,
+        data: validScene,
+        created_at: '2026-05-08T12:00:00Z',
+        updated_at: '2026-05-08T12:00:00Z'
+      },
+      error: null
+    });
+
+    const result = await migrateGuestAutosave(stubClient, 'Migrated project');
 
     expect(result).toEqual({ migrated: true });
-    expect(insert).toHaveBeenCalledWith({
-      owner_id: 'user-1',
+    expect(createDocumentMock).toHaveBeenCalledWith(stubClient, {
       name: 'Migrated project',
       data: validScene
     });
@@ -75,10 +85,15 @@ describe('migrateGuestAutosave', () => {
 
   it('zachowuje autosave przy PROJECT_LIMIT_EXCEEDED', async () => {
     window.localStorage.setItem(AUTOSAVE_KEY, validPayload);
-    const { client } = makeSupabaseInsert({
-      error: { code: 'P0001', message: 'project_limit_exceeded: free plan' }
+    createDocumentMock.mockResolvedValue({
+      data: null,
+      error: {
+        business: BusinessError.PROJECT_LIMIT_EXCEEDED,
+        message: 'errors.project_limit_exceeded'
+      }
     });
-    const result = await migrateGuestAutosave(client, 'user-1', 'Untitled');
+
+    const result = await migrateGuestAutosave(stubClient, 'Untitled');
 
     expect(result).toEqual({ migrated: false, reason: 'project_limit' });
     expect(window.localStorage.getItem(AUTOSAVE_KEY)).toBe(validPayload);
@@ -86,11 +101,38 @@ describe('migrateGuestAutosave', () => {
   });
 
   it('zwraca db_error przy nieznanym błędzie i nie czyści autosave', async () => {
+    // Suppress the helper's diagnostic console.error so the test output stays
+    // clean — we verify the surface contract, not the log line.
+    vi.spyOn(console, 'error').mockImplementation(() => {});
     window.localStorage.setItem(AUTOSAVE_KEY, validPayload);
-    const { client } = makeSupabaseInsert({
-      error: { code: '42P01', message: 'relation does not exist' }
+    createDocumentMock.mockResolvedValue({
+      data: null,
+      error: {
+        business: BusinessError.UNKNOWN,
+        message: 'errors.unknown',
+        rawCode: '42P01',
+        rawMessage: 'relation does not exist'
+      }
     });
-    const result = await migrateGuestAutosave(client, 'user-1', 'Untitled');
+
+    const result = await migrateGuestAutosave(stubClient, 'Untitled');
+
+    expect(result).toEqual({ migrated: false, reason: 'db_error' });
+    expect(window.localStorage.getItem(AUTOSAVE_KEY)).toBe(validPayload);
+  });
+
+  it('mapuje DOCUMENT_PAYLOAD_TOO_LARGE również jako db_error', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    window.localStorage.setItem(AUTOSAVE_KEY, validPayload);
+    createDocumentMock.mockResolvedValue({
+      data: null,
+      error: {
+        business: BusinessError.DOCUMENT_PAYLOAD_TOO_LARGE,
+        message: 'errors.document_payload_too_large'
+      }
+    });
+
+    const result = await migrateGuestAutosave(stubClient, 'Untitled');
 
     expect(result).toEqual({ migrated: false, reason: 'db_error' });
     expect(window.localStorage.getItem(AUTOSAVE_KEY)).toBe(validPayload);
