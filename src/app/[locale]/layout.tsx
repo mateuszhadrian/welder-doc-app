@@ -9,6 +9,8 @@ import { routing, type Locale } from '@/i18n/routing';
 import { createClient } from '@/lib/supabase/server';
 import { CURRENT_TOS_VERSION } from '@/lib/consent/version';
 import { LocaleSwitcher } from '@/components/locale-switcher/LocaleSwitcher';
+import { AuthProvider } from '@/components/providers/AuthProvider';
+import { SignOutButton } from '@/components/auth/SignOutButton';
 import '../globals.css';
 
 const inter = Inter({
@@ -104,12 +106,17 @@ export default async function LocaleLayout({
     <html lang={locale} className={inter.variable}>
       <body>
         <NextIntlClientProvider messages={messages}>
-          <header className="flex h-12 items-center justify-between border-b border-neutral-200 bg-white px-4">
-            <span className="text-sm font-semibold text-neutral-900">WelderDoc</span>
-            <LocaleSwitcher currentLocale={locale as Locale} userId={user?.id} />
-          </header>
-          {children}
-          <Toaster position="top-right" richColors closeButton />
+          <AuthProvider>
+            <header className="flex h-12 items-center justify-between border-b border-neutral-200 bg-white px-4">
+              <span className="text-sm font-semibold text-neutral-900">WelderDoc</span>
+              <div className="flex items-center gap-2">
+                <LocaleSwitcher currentLocale={locale as Locale} userId={user?.id} />
+                {user && <SignOutButton />}
+              </div>
+            </header>
+            {children}
+            <Toaster position="top-right" richColors closeButton />
+          </AuthProvider>
         </NextIntlClientProvider>
       </body>
     </html>
