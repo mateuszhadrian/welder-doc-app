@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { getTranslations, setRequestLocale } from 'next-intl/server';
 
+import { DocumentListItem } from '@/components/projects/DocumentListItem';
 import { NewProjectButton } from '@/components/projects/NewProjectButton';
 import { routing } from '@/i18n/routing';
 import { createClient } from '@/lib/supabase/server';
@@ -167,18 +168,14 @@ function DocumentList({ items, total, limit, offset, sort, locale, tDashboard }:
         data-testid="dashboard-list"
       >
         {items.map((doc) => (
-          <li key={doc.id}>
-            <Link
-              href={buildLocalePath(locale, `/canvas/${doc.id}`)}
-              className="flex items-center justify-between gap-4 px-4 py-3 transition hover:bg-neutral-50"
-              data-testid="dashboard-list-item"
-            >
-              <span className="truncate text-sm font-medium text-neutral-900">{doc.name}</span>
-              <span className="shrink-0 text-xs text-neutral-500">
-                {tDashboard('last_updated', { date: formatDate(doc.updated_at, locale) })}
-              </span>
-            </Link>
-          </li>
+          <DocumentListItem
+            key={doc.id}
+            documentId={doc.id}
+            name={doc.name}
+            formattedUpdatedAt={formatDate(doc.updated_at, locale)}
+            href={buildLocalePath(locale, `/canvas/${doc.id}`)}
+            loginHref={buildLocalePath(locale, '/login')}
+          />
         ))}
       </ul>
 
