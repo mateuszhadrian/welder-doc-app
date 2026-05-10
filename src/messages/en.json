@@ -79,6 +79,7 @@
     "rate_limited": "Too many attempts. Please try again in a moment.",
     "unauthorized": "Your session has expired. Please sign in again.",
     "network_error": "Connection problem. Check your internet and try again.",
+    "resend_session_lost": "Registration session expired. Please sign up again to receive the link.",
     "unknown": "Something went wrong. Please try again.",
     "invalid_email_format": "Invalid email format.",
     "password_required": "Please enter your password.",

@@ -27,6 +27,16 @@ export interface RegisterUserCommand {
     version: string;
     accepted: true;
   };
+  /**
+   * Required: forces GoTrue to use PKCE flow for the confirmation email.
+   * Without it the email link redirects to `site_url` with the session in
+   * the URL hash (implicit flow), bypassing `/auth/callback`. The route
+   * handler at `/auth/callback` is what sets the SSR cookies that make
+   * `flushPendingConsent()` succeed; without those cookies `/api/consent`
+   * 401s and the consent_log row is never written.
+   * Build via `${APP_URL}${buildLocalePath(locale, '/auth/callback')}`.
+   */
+  emailRedirectTo: string;
 }
 
 export type RegisterUserResult =
@@ -47,10 +57,58 @@ export type FlushPendingConsentResult = { ok: true } | { ok: false; reason: stri
 
 export const PENDING_CONSENT_KEY = 'welderdoc_pending_consent';
 
+/**
+ * Per-tab sessionStorage key holding `{ email, password }` from the most
+ * recent signUp. Read by `resendVerificationEmail()` to bypass a server-side
+ * GoTrue bug: POST /auth/v1/resend ignores `code_challenge` in the body and
+ * issues a non-PKCE confirmation token even when the SDK forwards PKCE params.
+ * Calling auth.signUp() again for an existing unconfirmed user IS handled
+ * with PKCE, so we replay it as the resend mechanism.
+ *
+ * Cleared by `clearPendingSignupCredentials()` from AuthProvider after the
+ * first successful sign-in (matches consent-bundle lifecycle).
+ *
+ * Security: per-tab, gone on tab close. Same XSS exposure as the password
+ * being held in form state during signUp submit.
+ */
+export const PENDING_SIGNUP_CREDENTIALS_KEY = 'welderdoc_pending_signup_credentials';
+
 interface PendingConsentPayload {
   types: [ConsentType, ...ConsentType[]];
   version: string;
   accepted: boolean;
+}
+
+interface PendingSignupCredentials {
+  email: string;
+  password: string;
+}
+
+export function readPendingSignupCredentials(forEmail: string): PendingSignupCredentials | null {
+  if (typeof window === 'undefined') return null;
+  let raw: string | null = null;
+  try {
+    raw = window.sessionStorage.getItem(PENDING_SIGNUP_CREDENTIALS_KEY);
+  } catch {
+    return null;
+  }
+  if (raw === null) return null;
+  try {
+    const parsed = JSON.parse(raw) as PendingSignupCredentials;
+    if (parsed.email !== forEmail) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+export function clearPendingSignupCredentials(): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.sessionStorage.removeItem(PENDING_SIGNUP_CREDENTIALS_KEY);
+  } catch {
+    // ignore
+  }
 }
 
 export async function registerUser(command: RegisterUserCommand): Promise<RegisterUserResult> {
@@ -58,7 +116,8 @@ export async function registerUser(command: RegisterUserCommand): Promise<Regist
 
   const { data, error } = await supabase.auth.signUp({
     email: command.email.trim(),
-    password: command.password
+    password: command.password,
+    options: { emailRedirectTo: command.emailRedirectTo }
   });
 
   if (error) {
@@ -78,14 +137,22 @@ export async function registerUser(command: RegisterUserCommand): Promise<Regist
   // session cookie exists. In dev (`enable_confirmations = false`) the session
   // is created immediately and the callback page can flush right away;
   // in prod the user must click the verification link first.
+  //
+  // Also stash the credentials so resendVerificationEmail can replay signUp
+  // for PKCE-correct confirmation emails (server-side /resend bug).
   if (typeof window !== 'undefined') {
-    const payload: PendingConsentPayload = {
+    const consentPayload: PendingConsentPayload = {
       types: command.consent.types,
       version: command.consent.version,
       accepted: command.consent.accepted
     };
+    const credPayload: PendingSignupCredentials = {
+      email: command.email.trim(),
+      password: command.password
+    };
     try {
-      window.sessionStorage.setItem(PENDING_CONSENT_KEY, JSON.stringify(payload));
+      window.sessionStorage.setItem(PENDING_CONSENT_KEY, JSON.stringify(consentPayload));
+      window.sessionStorage.setItem(PENDING_SIGNUP_CREDENTIALS_KEY, JSON.stringify(credPayload));
     } catch {
       // sessionStorage may be unavailable (private mode quota, sandboxed iframe).
       // The signup itself succeeded — let the caller decide how to surface the

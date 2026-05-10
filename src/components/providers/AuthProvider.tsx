@@ -5,7 +5,7 @@ import { useLocale, useTranslations } from 'next-intl';
 import { useEffect } from 'react';
 import { toast } from 'sonner';
 
-import { flushPendingConsent } from '@/lib/auth/registration';
+import { clearPendingSignupCredentials, flushPendingConsent } from '@/lib/auth/registration';
 import { createClient } from '@/lib/supabase/client';
 import { useResetUserScoped } from '@/store/use-canvas-store';
 
@@ -45,7 +45,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         void flushPendingConsent().then((result) => {
           if (!result.ok) {
             toast.error(tErrors('consent_failed'));
+            return;
           }
+          // Resend-credentials are only useful pre-confirmation; once the
+          // session is live, drop them to limit the password's exposure
+          // window.
+          clearPendingSignupCredentials();
         });
       }
     });

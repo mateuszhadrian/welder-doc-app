@@ -76,6 +76,34 @@ export interface ResizeCanvasCommand {
 }
 
 // ============================================================
+// AUTH — RESEND VERIFICATION EMAIL
+// ============================================================
+
+/**
+ * Email-only subset of Supabase Auth SDK's `resend` types.
+ * 'sms' / 'phone_change' are excluded (we don't support phone auth);
+ * 'recovery' is NOT a valid `resend` type — password recovery goes through
+ * `supabase.auth.resetPasswordForEmail`. MVP US-001 only uses 'signup'.
+ */
+export type ResendVerificationEmailType = 'signup' | 'email_change';
+
+/**
+ * Command mirroring `supabase.auth.resend()` payload.
+ *
+ * `emailRedirectTo` is required (not optional) to force PKCE flow:
+ * without it, GoTrue defaults to implicit flow (token in URL hash on
+ * `site_url`), which bypasses our `/auth/callback` route handler and
+ * leaves SSR cookies unset — `flushPendingConsent()` then 401s and the
+ * consent_log row is never written. Caller must build a locale-aware
+ * URL like `${APP_URL}${buildLocalePath(locale, '/auth/callback')}`.
+ */
+export interface ResendVerificationEmailCommand {
+  type: ResendVerificationEmailType;
+  email: string;
+  emailRedirectTo: string;
+}
+
+// ============================================================
 // USER PROFILE
 // ============================================================
 

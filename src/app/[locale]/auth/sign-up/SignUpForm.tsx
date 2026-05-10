@@ -69,6 +69,9 @@ export function SignUpForm({ locale, consentVersion }: Props) {
       return;
     }
 
+    const callbackPath = buildLocalePath(locale, '/auth/callback');
+    const emailRedirectTo = `${process.env.NEXT_PUBLIC_APP_URL}${callbackPath}`;
+
     const result = await registerUser({
       email,
       password,
@@ -76,7 +79,8 @@ export function SignUpForm({ locale, consentVersion }: Props) {
         types: ['terms_of_service', 'privacy_policy', 'cookies'],
         version: consentVersion,
         accepted: true
-      }
+      },
+      emailRedirectTo
     });
 
     if (!result.ok) {

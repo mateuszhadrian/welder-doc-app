@@ -132,7 +132,8 @@ describe('SignUpForm', () => {
         types: ['terms_of_service', 'privacy_policy', 'cookies'],
         version: CONSENT_VERSION,
         accepted: true
-      }
+      },
+      emailRedirectTo: expect.stringMatching(/\/auth\/callback$/)
     });
     await waitFor(() =>
       expect(locationAssignMock).toHaveBeenCalledWith(

@@ -96,6 +96,22 @@ describe('mapAuthError', () => {
     expect(m?.business).toBe(BusinessError.RATE_LIMITED);
   });
 
+  // Regression: GoTrue's resend 60s cooldown is HTTP 429; rely on the status branch.
+  it('mapuje 60s cooldown z resend (status 429) → RATE_LIMITED', () => {
+    const m = mapAuthError(
+      authErr('For security purposes, you can only request this once every 60 seconds', 429)
+    );
+    expect(m?.business).toBe(BusinessError.RATE_LIMITED);
+    expect(m?.message).toBe('errors.rate_limited');
+  });
+
+  // Regression: GoTrue's hourly cap "Email rate limit exceeded" — also surfaced as 429,
+  // and the literal "rate limit" substring is a defense-in-depth fallback.
+  it('mapuje "Email rate limit exceeded" → RATE_LIMITED', () => {
+    const m = mapAuthError(authErr('Email rate limit exceeded', 429));
+    expect(m?.business).toBe(BusinessError.RATE_LIMITED);
+  });
+
   it('mapuje słabe hasło heurystyką password+characters', () => {
     const m = mapAuthError(authErr('Password should be at least 8 characters', 400));
     expect(m?.business).toBe(BusinessError.PASSWORD_TOO_WEAK);

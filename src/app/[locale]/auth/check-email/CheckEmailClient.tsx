@@ -4,8 +4,8 @@ import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { routing } from '@/i18n/routing';
-import { createClient } from '@/lib/supabase/client';
-import { mapAuthError, type MappedError } from '@/lib/supabase/errors';
+import { resendVerificationEmail } from '@/lib/auth/resendVerificationEmail';
+import { type MappedError } from '@/lib/supabase/errors';
 
 const RESEND_COOLDOWN_SECONDS = 60;
 
@@ -38,7 +38,10 @@ export function CheckEmailClient({ email, locale }: Props) {
     }
   })();
 
-  const loginHref = locale === routing.defaultLocale ? '/login' : `/${locale}/login`;
+  const buildLocalePath = (segment: string) =>
+    locale === routing.defaultLocale ? segment : `/${locale}${segment}`;
+
+  const loginHref = buildLocalePath('/login');
 
   async function handleResend() {
     if (!email || secondsLeft > 0 || isPending) return;
@@ -46,17 +49,18 @@ export function CheckEmailClient({ email, locale }: Props) {
     setResendSent(false);
     setIsPending(true);
 
-    const supabase = createClient();
-    const { error: resendError } = await supabase.auth.resend({
+    const emailRedirectTo = `${process.env.NEXT_PUBLIC_APP_URL}${buildLocalePath('/auth/callback')}`;
+
+    const result = await resendVerificationEmail({
       type: 'signup',
-      email
+      email,
+      emailRedirectTo
     });
 
     setIsPending(false);
 
-    if (resendError) {
-      const mapped = mapAuthError(resendError);
-      if (mapped) setError(mapped);
+    if (!result.ok) {
+      setError(result.mapped);
       return;
     }
 

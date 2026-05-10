@@ -10,6 +10,7 @@ import { BusinessError } from '@/lib/supabase/errors';
 
 import {
   PENDING_CONSENT_KEY,
+  PENDING_SIGNUP_CREDENTIALS_KEY,
   flushPendingConsent,
   registerUser,
   type RegisterUserCommand
@@ -47,6 +48,7 @@ const makeCommand = (overrides: Partial<RegisterUserCommand> = {}): RegisterUser
     version: '1.0.0',
     accepted: true
   },
+  emailRedirectTo: 'http://localhost:3000/auth/callback',
   ...overrides
 });
 
@@ -139,7 +141,41 @@ describe('registerUser', () => {
 
     expect(signUp).toHaveBeenCalledWith({
       email: 'user@example.com',
-      password: 'StrongPass123'
+      password: 'StrongPass123',
+      options: { emailRedirectTo: 'http://localhost:3000/auth/callback' }
+    });
+  });
+
+  // Regression: implicit flow (no emailRedirectTo) caused the email link to
+  // bypass /auth/callback, leaving SSR cookies unset and consent_log empty
+  // for every newly-registered user. Forcing the option blocks that.
+  it('przekazuje emailRedirectTo z command do supabase.auth.signUp.options', async () => {
+    const signUp = mockSignUp({
+      data: { user: makeUser(), session: null },
+      error: null
+    });
+
+    await registerUser(makeCommand({ emailRedirectTo: 'https://welder.test/en/auth/callback' }));
+
+    expect(signUp).toHaveBeenCalledWith(
+      expect.objectContaining({
+        options: { emailRedirectTo: 'https://welder.test/en/auth/callback' }
+      })
+    );
+  });
+
+  // Regression: stashing email+password is required so resendVerificationEmail
+  // can replay signUp (workaround for GoTrue /resend ignoring PKCE).
+  it('stashuje email+password w sessionStorage po sukcesie signUp', async () => {
+    mockSignUp({ data: { user: makeUser(), session: null }, error: null });
+
+    await registerUser(makeCommand({ email: '  user@example.com  ', password: 'Secret1234' }));
+
+    const raw = window.sessionStorage.getItem(PENDING_SIGNUP_CREDENTIALS_KEY);
+    expect(raw).not.toBeNull();
+    expect(JSON.parse(raw!)).toEqual({
+      email: 'user@example.com',
+      password: 'Secret1234'
     });
   });
 

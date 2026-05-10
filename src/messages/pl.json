@@ -79,6 +79,7 @@
     "rate_limited": "Zbyt wiele prób. Spróbuj ponownie za chwilę.",
     "unauthorized": "Sesja wygasła. Zaloguj się ponownie.",
     "network_error": "Problem z połączeniem. Sprawdź internet i spróbuj ponownie.",
+    "resend_session_lost": "Sesja rejestracji wygasła. Zarejestruj się ponownie, aby otrzymać link.",
     "unknown": "Coś poszło nie tak. Spróbuj ponownie.",
     "invalid_email_format": "Nieprawidłowy format adresu email.",
     "password_required": "Wpisz hasło.",
