@@ -8,6 +8,7 @@ import {
   getDocument,
   listDocuments,
   renameDocument,
+  duplicateDocument,
   resizeCanvas,
   saveDocumentData,
   type ListDocumentsSort
@@ -1399,5 +1400,271 @@ describe('deleteDocument — DB error mapping', () => {
     const result = await deleteDocument(client, DOCUMENT_ID);
 
     expect(result.error?.business).toBe(BusinessError.UNKNOWN);
+  });
+});
+
+// ============================================================
+// duplicateDocument — US-012 (SELECT + INSERT)
+// ============================================================
+
+interface DuplicateMockOptions {
+  readRow?: { name: string; data: CanvasDocument } | null;
+  readError?: Partial<PostgrestError> | null;
+  insertRow?: typeof okRow | null;
+  insertError?: Partial<PostgrestError> | null;
+  user?: { id: string } | null;
+  authError?: Partial<AuthError> | null;
+}
+
+/**
+ * Mock for the two-step duplicate flow. `from('documents')` returns a chain
+ * that exposes BOTH `.select(...)` (the SELECT step) and `.insert(...)` (the
+ * INSERT step inside createDocument). `auth.getUser()` is wired separately —
+ * createDocument calls it as a preflight before the INSERT.
+ */
+function makeSupabaseForDuplicate(opts: DuplicateMockOptions = {}) {
+  const readSingle = vi.fn().mockResolvedValue({
+    data: opts.readRow ?? null,
+    error: opts.readError ?? null
+  });
+  const readEq = vi.fn(() => ({ single: readSingle }));
+  const readSelect = vi.fn(() => ({ eq: readEq }));
+
+  const insertSingle = vi.fn().mockResolvedValue({
+    data: opts.insertRow ?? null,
+    error: opts.insertError ?? null
+  });
+  const insertSelect = vi.fn(() => ({ single: insertSingle }));
+  const insert = vi.fn(() => ({ select: insertSelect }));
+
+  const from = vi.fn(() => ({ select: readSelect, insert }));
+  const getUser = vi.fn().mockResolvedValue({
+    data: { user: opts.user === undefined ? { id: USER_ID } : opts.user },
+    error: opts.authError ?? null
+  });
+
+  const client = { from, auth: { getUser } } as unknown as SupabaseClient<Database>;
+  return {
+    client,
+    spies: { from, readSelect, readEq, readSingle, insert, insertSelect, insertSingle, getUser }
+  };
+}
+
+const SOURCE_ID = 'cccccccc-dddd-eeee-ffff-000000000000';
+
+describe('duplicateDocument — preflight (no round-trip)', () => {
+  it('rejects a suffix longer than 100 chars as DOCUMENT_NAME_INVALID', async () => {
+    const { client, spies } = makeSupabaseForDuplicate();
+    const result = await duplicateDocument(client, SOURCE_ID, {
+      nameSuffix: 'x'.repeat(101)
+    });
+
+    expect(result.data).toBeNull();
+    expect(result.error?.business).toBe(BusinessError.DOCUMENT_NAME_INVALID);
+    expect(result.error?.message).toBe('errors.document_name_invalid');
+    expect(spies.from).not.toHaveBeenCalled();
+  });
+});
+
+describe('duplicateDocument — read step error mapping', () => {
+  it('maps PGRST116 from the SELECT to DOCUMENT_NOT_FOUND without attempting the INSERT', async () => {
+    const { client, spies } = makeSupabaseForDuplicate({
+      readError: {
+        code: 'PGRST116',
+        message: 'Results contain 0 rows',
+        details: '',
+        hint: '',
+        name: 'PostgrestError'
+      }
+    });
+
+    const result = await duplicateDocument(client, SOURCE_ID);
+
+    expect(result.error?.business).toBe(BusinessError.DOCUMENT_NOT_FOUND);
+    expect(result.error?.message).toBe('errors.document_not_found');
+    expect(spies.insert).not.toHaveBeenCalled();
+    expect(spies.getUser).not.toHaveBeenCalled();
+  });
+
+  it('maps PGRST301 (JWT expired) on the SELECT to UNAUTHORIZED', async () => {
+    const { client, spies } = makeSupabaseForDuplicate({
+      readError: {
+        code: 'PGRST301',
+        message: 'JWT expired',
+        details: '',
+        hint: '',
+        name: 'PostgrestError'
+      }
+    });
+
+    const result = await duplicateDocument(client, SOURCE_ID);
+
+    expect(result.error?.business).toBe(BusinessError.UNAUTHORIZED);
+    expect(spies.insert).not.toHaveBeenCalled();
+  });
+
+  it('falls back to UNKNOWN for an unmapped Postgres error on the SELECT', async () => {
+    const { client } = makeSupabaseForDuplicate({
+      readError: {
+        code: '99999',
+        message: 'mystery',
+        details: '',
+        hint: '',
+        name: 'PostgrestError'
+      }
+    });
+
+    const result = await duplicateDocument(client, SOURCE_ID);
+
+    expect(result.error?.business).toBe(BusinessError.UNKNOWN);
+    expect(result.error?.rawCode).toBe('99999');
+  });
+
+  it('rejects a source row with a malformed `data` blob as DOCUMENT_DATA_SHAPE_INVALID', async () => {
+    const { client, spies } = makeSupabaseForDuplicate({
+      readRow: {
+        name: 'Złącze T 1',
+        // Missing `weldUnits` violates isCanvasDocument — surfaces as data shape.
+        data: { schemaVersion: 1, canvasWidth: 2970, canvasHeight: 2100, shapes: [] } as
+          | unknown
+          | CanvasDocument as CanvasDocument
+      }
+    });
+
+    const result = await duplicateDocument(client, SOURCE_ID);
+
+    expect(result.error?.business).toBe(BusinessError.DOCUMENT_DATA_SHAPE_INVALID);
+    expect(spies.insert).not.toHaveBeenCalled();
+  });
+});
+
+describe('duplicateDocument — happy path', () => {
+  it('queries `name, data` from the source by id', async () => {
+    const { client, spies } = makeSupabaseForDuplicate({
+      readRow: { name: 'Złącze T 1', data: validData },
+      insertRow: { ...okRow, name: 'Złącze T 1 (kopia)' }
+    });
+
+    await duplicateDocument(client, SOURCE_ID);
+
+    expect(spies.from).toHaveBeenNthCalledWith(1, 'documents');
+    expect(spies.readSelect).toHaveBeenCalledWith('name, data');
+    expect(spies.readEq).toHaveBeenCalledWith('id', SOURCE_ID);
+    expect(spies.readSingle).toHaveBeenCalledTimes(1);
+  });
+
+  it('inserts a copy with the default PL suffix "(kopia)" appended to the source name', async () => {
+    const { client, spies } = makeSupabaseForDuplicate({
+      readRow: { name: 'Złącze T 1', data: validData },
+      insertRow: { ...okRow, name: 'Złącze T 1 (kopia)' }
+    });
+
+    const result = await duplicateDocument(client, SOURCE_ID);
+
+    expect(result.error).toBeNull();
+    expect(spies.insert).toHaveBeenCalledTimes(1);
+    expect(spies.insert).toHaveBeenCalledWith({
+      owner_id: USER_ID,
+      name: 'Złącze T 1 (kopia)',
+      data: validData
+    });
+    expect(result.data?.name).toBe('Złącze T 1 (kopia)');
+  });
+
+  it('honours a caller-provided suffix (i18n for EN locale)', async () => {
+    const { client, spies } = makeSupabaseForDuplicate({
+      readRow: { name: 'T-joint 1', data: validData },
+      insertRow: { ...okRow, name: 'T-joint 1 (copy)' }
+    });
+
+    await duplicateDocument(client, SOURCE_ID, { nameSuffix: ' (copy)' });
+
+    expect(spies.insert).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'T-joint 1 (copy)' })
+    );
+  });
+
+  it('truncates the source name so `name + suffix` fits the 100-char DB cap exactly', async () => {
+    // Source name is at the cap. Without truncation, "(kopia)" would push the
+    // concatenation to 108 and the DB CHECK would reject. Helper keeps the
+    // suffix and slices the source.
+    const longName = 'x'.repeat(100);
+    const suffix = ' (kopia)'; // 8 chars
+    const expectedName = `${'x'.repeat(92)}${suffix}`;
+    expect(expectedName.length).toBe(100);
+
+    const { client, spies } = makeSupabaseForDuplicate({
+      readRow: { name: longName, data: validData },
+      insertRow: { ...okRow, name: expectedName }
+    });
+
+    await duplicateDocument(client, SOURCE_ID);
+
+    expect(spies.insert).toHaveBeenCalledWith(expect.objectContaining({ name: expectedName }));
+  });
+
+  it('does not truncate when `source + suffix` already fits', async () => {
+    const { client, spies } = makeSupabaseForDuplicate({
+      readRow: { name: 'short', data: validData },
+      insertRow: { ...okRow, name: 'short (kopia)' }
+    });
+
+    await duplicateDocument(client, SOURCE_ID);
+
+    expect(spies.insert).toHaveBeenCalledWith(expect.objectContaining({ name: 'short (kopia)' }));
+  });
+
+  it('returns a DocumentDto without owner_id or share_token columns', async () => {
+    const { client } = makeSupabaseForDuplicate({
+      readRow: { name: 'Złącze T 1', data: validData },
+      insertRow: { ...okRow, name: 'Złącze T 1 (kopia)' }
+    });
+
+    const result = await duplicateDocument(client, SOURCE_ID);
+
+    expect(result.data).toEqual({
+      id: okRow.id,
+      name: 'Złącze T 1 (kopia)',
+      schema_version: okRow.schema_version,
+      data: validData,
+      created_at: okRow.created_at,
+      updated_at: okRow.updated_at
+    });
+    expect(result.data).not.toHaveProperty('owner_id');
+    expect(result.data).not.toHaveProperty('share_token');
+  });
+});
+
+describe('duplicateDocument — insert step error mapping', () => {
+  it('propagates UNAUTHORIZED when createDocument detects no session', async () => {
+    const { client, spies } = makeSupabaseForDuplicate({
+      readRow: { name: 'Złącze T 1', data: validData },
+      user: null
+    });
+
+    const result = await duplicateDocument(client, SOURCE_ID);
+
+    expect(result.error?.business).toBe(BusinessError.UNAUTHORIZED);
+    // SELECT happened; INSERT did not because auth gated it.
+    expect(spies.readSingle).toHaveBeenCalledTimes(1);
+    expect(spies.insert).not.toHaveBeenCalled();
+  });
+
+  it('propagates PROJECT_LIMIT_EXCEEDED when the Free-plan trigger fires on the INSERT', async () => {
+    const { client } = makeSupabaseForDuplicate({
+      readRow: { name: 'Złącze T 1', data: validData },
+      insertError: {
+        code: 'P0001',
+        message: 'project_limit_exceeded: free plan allows 1 project',
+        details: '',
+        hint: '',
+        name: 'PostgrestError'
+      }
+    });
+
+    const result = await duplicateDocument(client, SOURCE_ID);
+
+    expect(result.error?.business).toBe(BusinessError.PROJECT_LIMIT_EXCEEDED);
+    expect(result.error?.message).toBe('errors.project_limit_exceeded');
   });
 });

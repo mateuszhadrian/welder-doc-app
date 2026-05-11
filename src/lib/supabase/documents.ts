@@ -726,3 +726,120 @@ export async function resizeCanvas(
     error: null
   };
 }
+
+// ============================================================
+// duplicateDocument — US-012 (GET + POST /rest/v1/documents)
+// ============================================================
+
+/** Default name suffix when the caller omits `options.nameSuffix`. PL locale. */
+const DEFAULT_DUPLICATE_SUFFIX = ' (kopia)' as const;
+
+export interface DuplicateDocumentOptions {
+  /**
+   * Suffix appended to the source document's name. Default ' (kopia)' matches
+   * the Polish UI; English consumers should pass ' (copy)' (or a fully
+   * localised string from `next-intl`). i18n stays in the UI layer — pure lib
+   * helpers must not import `next-intl`.
+   *
+   * If `sourceName + suffix` exceeds the 100-char DB cap, the source name is
+   * truncated so the final string fits exactly 100 characters
+   * (`CHECK length(name) <= 100`). The suffix wins over the source on
+   * overflow, because losing the "(kopia)" hint would silently produce two
+   * visually identical neighbours in the dashboard list.
+   *
+   * A suffix longer than 100 chars is rejected upfront as caller error.
+   */
+  nameSuffix?: string;
+}
+
+/** `duplicateDocument` returns the same shape as `createDocument` — the
+ *  failure modes are a strict superset, so callers reuse the existing
+ *  error-handling switch (PROJECT_LIMIT_EXCEEDED, DOCUMENT_PAYLOAD_TOO_LARGE,
+ *  UNAUTHORIZED, …) with one extra case: DOCUMENT_NOT_FOUND for the source row.
+ */
+export type DuplicateDocumentResult = CreateDocumentResult;
+
+/**
+ * Duplicate a document (US-012, api-plan.md §2.2). Two steps:
+ *   1. SELECT `name, data` from the source row — RLS-bound, so cross-tenant
+ *      and non-existent UUIDs both surface as PGRST116 → `DOCUMENT_NOT_FOUND`
+ *      (existence of other users' rows is never leaked).
+ *   2. Delegate to `createDocument` to write the copy. That helper owns the
+ *      `auth.getUser()` preflight, the 5 MB payload guard, the
+ *      `check_free_project_limit` trigger mapping, and the trimmed-name
+ *      validator. Re-implementing them here would be drift waiting to happen.
+ *
+ * The source `data` blob already passed both the DB CHECK on
+ * `octet_length(data::text)` and the runtime `isCanvasDocument` guard, so
+ * `createDocument`'s own validators are belt-and-braces — cheap, correct,
+ * worth keeping.
+ *
+ * Caller is responsible for refreshing any dashboard list cache after success
+ * (e.g. `router.refresh()` in a Server-Component-backed list); the helper
+ * does not mutate React state.
+ */
+export async function duplicateDocument(
+  supabase: SupabaseClient<Database>,
+  sourceDocumentId: string,
+  options?: DuplicateDocumentOptions
+): Promise<DuplicateDocumentResult> {
+  const suffix = options?.nameSuffix ?? DEFAULT_DUPLICATE_SUFFIX;
+  if (suffix.length > MAX_NAME_LENGTH) {
+    return {
+      data: null,
+      error: {
+        business: BusinessError.DOCUMENT_NAME_INVALID,
+        message: 'errors.document_name_invalid'
+      }
+    };
+  }
+
+  const { data: source, error: readError } = await supabase
+    .from('documents')
+    .select('name, data')
+    .eq('id', sourceDocumentId)
+    .single();
+
+  if (readError) {
+    if (readError.code === 'PGRST116') {
+      return {
+        data: null,
+        error: {
+          business: BusinessError.DOCUMENT_NOT_FOUND,
+          message: 'errors.document_not_found',
+          rawCode: readError.code
+        }
+      };
+    }
+    const mapped = mapPostgrestError(readError) ?? {
+      business: BusinessError.UNKNOWN,
+      message: 'errors.unknown',
+      rawCode: readError.code,
+      rawMessage: readError.message
+    };
+    return { data: null, error: mapped };
+  }
+
+  if (!isCanvasDocument(source.data)) {
+    return {
+      data: null,
+      error: {
+        business: BusinessError.DOCUMENT_DATA_SHAPE_INVALID,
+        message: 'errors.document_data_shape_invalid'
+      }
+    };
+  }
+
+  // Json narrowed by isCanvasDocument is still `Json & CanvasDocument`, which
+  // TS refuses to pass to a CanvasDocument-typed param. Explicit alias drops
+  // the Json branch. Same pattern as resizeCanvas above.
+  const sourceScene: CanvasDocument = source.data;
+
+  const concatenated = `${source.name}${suffix}`;
+  const newName =
+    concatenated.length <= MAX_NAME_LENGTH
+      ? concatenated
+      : source.name.slice(0, MAX_NAME_LENGTH - suffix.length) + suffix;
+
+  return createDocument(supabase, { name: newName, data: sourceScene });
+}
