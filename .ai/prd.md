@@ -990,6 +990,13 @@ Kryteria akceptacji:
 - Watermark przestaje być nakładany na nowe eksporty.
 - Limity elementów i projektów są zniesione.
 
+Notatki techniczne (do uwzględnienia przy implementacji):
+
+- **Retry/backoff w `/checkout-return`** (per `effective-plan-rpc-post-endpoint-implementation-plan.md` §8.3): strona Server Component, po powrocie z Paddle, woła `fetchEffectivePlan(supabase, user.id)` z harmonogramem `200 ms / 600 ms / 1800 ms` (3 próby), oczekując na propagację webhooka `subscription.created`. Jeśli po 3 próbach nadal `'free'` → fallback do `user_profiles.plan` + komunikat „your plan will activate within a minute". Logika retry żyje w komponencie strony, NIE w wrapperze `fetchEffectivePlan` (wrapper zwraca pojedynczy snapshot).
+- **Playwright smoke test** (per `effective-plan-rpc-post-endpoint-implementation-plan.md` §9.7): zastubować webhook Paddle + redirect na `/checkout-return`, zasymulować opóźnienie webhooka, asercja że strona wywołuje RPC i renderuje poprawny badge planu po opóźnieniu. Test mandatory dla `chromium-desktop`.
+- **Polityka błędów transientnych podczas pollingu**: gdy z RPC wyleci `BusinessError.UNAUTHORIZED` (PGRST301 / 42501) lub `NETWORK_ERROR` w trakcie 3-próbowego retry, traktować jako „try next tick", a NIE redirectować od razu na `/login` — analogicznie do `usePollSubscriptionActivation` (US-044), gdzie transientne błędy `listSubscriptions` nie przerywają pollingu. Dopiero gdy wszystkie próby skończą się błędem auth → wtedy redirect / komunikat. Dla `INVALID_PAYLOAD` (22P02 — niemożliwe, bo `user.id` zawsze valid) i innych nie-transient błędów: log + fallback do cache'a.
+- **`customData: { user_id }` w `Paddle.Checkout.open(...)`** (per CLAUDE.md PR checklist + `architecture-base.md` §16): obowiązkowe w każdym wywołaniu Checkout, inaczej pierwszy webhook `subscription.created` może spaść do 3-stopniowej procedury lookup'u użytkownika i potencjalnie zalogować się jako orphan.
+
 ---
 
 US-046
